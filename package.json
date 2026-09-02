@@ -1,0 +1,26 @@
+{
+  "name": "opsflow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpsFlow - Operations workflow and logistics platform",
+  "packageManager": "npm@11.11.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "test": "turbo test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nawatech26-collab/opsflow.git"
+  },
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "turbo": "^2.10.12"
+  }
+}
