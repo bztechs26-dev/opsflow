@@ -1,0 +1,22 @@
+import { useState } from 'react'
+import type { ProductionRecord, QueuePlan } from '../types/operations'
+
+interface Props { records: ProductionRecord[]; machine: string; plan?: QueuePlan; onChange: (plan: QueuePlan) => void }
+
+export function QueueProjection({ records, machine, plan, onChange }: Props) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [draft, setDraft] = useState<QueuePlan | undefined>()
+  if (!plan) return <section className="panel queue-projection"><h2>Queue projection & staffing</h2><p className="queue-rule">Reimport the Production QA workbook to load its Crew Size assumptions and I.R. values.</p></section>
+  const assumptions = plan.machines.find((item) => matchMachine(item.machine, machine))
+  if (!assumptions) return <section className="panel queue-projection"><h2>Queue projection & staffing</h2><p className="queue-rule">No Crew Size assumptions were imported for {machine}.</p></section>
+  const result = projection(records, machine, assumptions.expectedPackages, assumptions.lhptGoal, plan.shiftHours)
+  const beginEdit = () => { setDraft({ shiftHours: plan.shiftHours, machines: plan.machines.map((item) => ({ ...item })) }); setIsEditing(true) }
+  return <section className="panel queue-projection"><div className="panel-header"><div><h2>Queue projection & staffing</h2><span>Eligible NOT STARTED ZIPs, in workbook order.</span></div><button className="text-button" type="button" onClick={beginEdit}>Planning assumptions</button></div><div className="queue-metrics"><Metric label="Queue capacity" value={format(result.capacity)} detail="planned packages"/><Metric label="Queued packages" value={format(result.packages)} detail={`${result.zips} eligible ZIPs`}/><Metric label="Expected PPH" value={format(Math.round(result.capacity / plan.shiftHours))} detail={`${plan.shiftHours} shift hours`}/><Metric label="Expected pieces" value={format(result.pieces)} detail={`LHPT goal ${assumptions.lhptGoal.toFixed(3)}`}/><Metric label="Projected crew requirement" value={result.crew.toFixed(1)} detail="people for this shift"/></div><p className="queue-rule">The next ZIP is excluded when it would exceed the machine’s package capacity.</p>{isEditing && draft && <div className="assumptions"><label>Shift hours<input type="number" min="1" step="0.5" value={draft.shiftHours} onChange={(event) => setDraft({ ...draft, shiftHours: Number(event.target.value) })}/></label>{draft.machines.map((item, index) => <div className="assumption-row" key={item.machine}><strong>{item.machine}</strong><label>Expected packages<input type="number" min="0" step="1000" value={item.expectedPackages} onChange={(event) => setDraft({ ...draft, machines: draft.machines.map((row, rowIndex) => rowIndex === index ? { ...row, expectedPackages: Number(event.target.value) } : row) })}/></label><label>LHPT goal<input type="number" min="0" step="0.001" value={item.lhptGoal} onChange={(event) => setDraft({ ...draft, machines: draft.machines.map((row, rowIndex) => rowIndex === index ? { ...row, lhptGoal: Number(event.target.value) } : row) })}/></label></div>)}<div className="assumption-actions"><button className="secondary-button" type="button" onClick={() => setIsEditing(false)}>Cancel</button><button className="primary-button" type="button" onClick={() => { onChange(draft); setIsEditing(false) }}>Apply projection</button></div></div>}</section>
+}
+
+function Metric({ label, value, detail }: { label: string; value: string; detail: string }) { return <div><span>{label}</span><strong>{value}</strong><small>{detail}</small></div> }
+function projection(records: ProductionRecord[], machine: string, capacity: number, lhpt: number, hours: number) { let packages = 0; let pieces = 0; let zips = 0; for (const record of records.filter((item) => matchMachine(item.machine, machine) && item.status === 'NOT_STARTED').sort((a, b) => a.queueOrder - b.queueOrder)) { if (packages + record.volume > capacity) break; packages += record.volume; pieces += record.volume * multiplier(record.ir); zips += 1 } return { capacity, packages, pieces, zips, crew: pieces * lhpt / 1000 / hours } }
+function multiplier(ir: string) { const match = ir.match(/^(\d+)\s*:/); return match ? Number(match[1]) + 1 : 0 }
+function matchMachine(left: string, right: string) { return canonical(left) === canonical(right) }
+function canonical(value: string) { return value.trim().toUpperCase().replace(/^FERAG\s*/, 'F').replace(/^([A-Z]+)0+(\d+)$/, '$1$2') }
+function format(value: number) { return value.toLocaleString() }

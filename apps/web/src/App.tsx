@@ -1,122 +1,38 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { AppShell } from './components/AppShell'
+import { QueueProjection } from './components/QueueProjection'
+import { StaffingPlanner } from './components/StaffingPlanner'
+import { TransferActivity } from './components/TransferActivity'
+import { ZipMoveWorkspace } from './components/ZipMoveWorkspace'
+import { isTripMappingWorkbook, parseBulkPlanWorkbook, parseOperationalData, parseRawProductionWorkbook, parseTripMappingWorkbook, zipKey } from './data/workbookData'
+import { DashboardPage } from './pages/DashboardPage'
+import { ProductionPage } from './pages/ProductionPage'
+import { ProjectionPage } from './pages/ProjectionPage'
+import { ShippingPage } from './pages/ShippingPage'
+import type { Load, NavigationItem, OperationalWeek, ProductionStatus, QueuePlan } from './types/operations'
 import './App.css'
 
+const storageKey = 'opsflow.operational-weeks.v4'
+const bulkPlanParserVersion = 3
+const productionParserVersion = 2
+const nav: NavigationItem[] = [{ id: 'dashboard', label: 'Dashboard', icon: 'grid' }, { id: 'production', label: 'Production', icon: 'factory' }, { id: 'shipping', label: 'Shipping', icon: 'truck' }, { id: 'projection', label: 'Projection', icon: 'chart' }, { id: 'loads', label: 'Loads', icon: 'box' }, { id: 'reports', label: 'Reports', icon: 'chart' }]
+type UploadDomain = 'production' | 'shipping'
+
 function App() {
-  const [count, setCount] = useState(0)
-
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+  const [page, setPage] = useState('dashboard'); const [productionView, setProductionView] = useState<'zip' | 'staffing' | 'machines' | 'moves'>('zip'); const [weeks, setWeeks] = useState<OperationalWeek[]>(readHistory); const [weekId, setWeekId] = useState(() => readHistory()[0]?.id ?? ''); const [isUploadOpen, setIsUploadOpen] = useState(false); const [uploadDomain, setUploadDomain] = useState<UploadDomain>('production'); const [isCreating, setIsCreating] = useState(false); const [uploadError, setUploadError] = useState(''); const productionInput = useRef<HTMLInputElement>(null); const bulkPlanInput = useRef<HTMLInputElement>(null)
+  useEffect(() => { window.localStorage.setItem(storageKey, JSON.stringify(weeks)) }, [weeks])
+  const week = weeks.find((item) => item.id === weekId); const metrics = useMemo(() => ({ complete: week?.productionRecords.filter((record) => record.status === 'COMPLETE').length ?? 0, total: week?.productionRecords.length ?? 0 }), [week])
+  const updateStatus = (id: string, status: ProductionStatus) => setWeeks((items) => items.map((item) => item.id === weekId ? { ...item, productionRecords: item.productionRecords.map((record) => record.id === id ? { ...record, status } : record) } : item)); const updateNotes = (id: string, notes: string) => setWeeks((items) => items.map((item) => item.id === weekId ? { ...item, productionRecords: item.productionRecords.map((record) => record.id === id ? { ...record, notes } : record) } : item)); const updateQueuePlan = (queuePlan: QueuePlan) => setWeeks((items) => items.map((item) => item.id === weekId ? { ...item, queuePlan } : item)); const moveZip = (id: string, machine: string) => setWeeks((items) => items.map((item) => item.id === weekId ? { ...item, productionRecords: item.productionRecords.map((record) => record.id === id ? { ...record, machine, movedAt: new Date().toISOString(), transferHistory: [...(record.transferHistory ?? []), { from: record.machine, to: machine, movedAt: new Date().toISOString() }] } : record) } : item))
+  const uploadFile = async () => { const file = uploadDomain === 'production' ? productionInput.current?.files?.[0] : bulkPlanInput.current?.files?.[0]; if (!file) return setUploadError(`Select a ${uploadDomain === 'production' ? 'Production QA' : 'Bulk Plan'} workbook.`); const id = findWeekNumber(file.name); if (!id) return setUploadError('The selected filename must include a week number, such as Production-WK36.xlsx or BulkPlan-WK36.xlsx.'); setIsCreating(true); setUploadError(''); try { await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve())); const buffer = await file.arrayBuffer(); const hash = await hashFile(buffer); const existing = weeks.find((item) => item.id === id); const isParserUpgrade = uploadDomain === 'shipping' ? existing?.bulkPlanParserVersion !== bulkPlanParserVersion : existing?.productionParserVersion !== productionParserVersion; if (existing?.fileHashes?.includes(hash) && !isParserUpgrade) return setUploadError('This exact file was already imported for this week. Choose a new version of the workbook.'); const productionData = uploadDomain === 'production' ? parseProductionUpload(buffer, `Week ${id}`, file.name) : undefined; const incomingLoads = uploadDomain === 'shipping' ? parseBulkPlanWorkbook(buffer, `Week ${id}`) : []; const incomingAreas = new Set(productionData?.productionRecords.map(recordArea) ?? []); const newWeek: OperationalWeek = existing ? { ...existing, productionRecords: productionData?.productionRecords.length ? [...existing.productionRecords.filter((record) => !incomingAreas.has(recordArea(record))), ...productionData.productionRecords] : existing.productionRecords, loads: incomingLoads.length ? (isParserUpgrade ? incomingLoads : mergeLoads(existing.loads, incomingLoads)) : existing.loads, queuePlan: productionData?.queuePlan ?? existing.queuePlan, uploadedAt: new Date().toISOString(), productionFileName: uploadDomain === 'production' ? file.name : existing.productionFileName, bulkPlanFileName: uploadDomain === 'shipping' ? file.name : existing.bulkPlanFileName, fileHashes: [...(existing.fileHashes ?? []).filter((item) => item !== hash), hash], productionParserVersion: uploadDomain === 'production' ? productionParserVersion : existing.productionParserVersion, bulkPlanParserVersion: uploadDomain === 'shipping' ? bulkPlanParserVersion : existing.bulkPlanParserVersion } : { id, label: `Week ${id}`, productionRecords: productionData?.productionRecords ?? [], loads: incomingLoads, queuePlan: productionData?.queuePlan, source: 'uploaded', uploadedAt: new Date().toISOString(), productionFileName: uploadDomain === 'production' ? file.name : '', bulkPlanFileName: uploadDomain === 'shipping' ? file.name : '', fileHashes: [hash], productionParserVersion: uploadDomain === 'production' ? productionParserVersion : undefined, bulkPlanParserVersion: uploadDomain === 'shipping' ? bulkPlanParserVersion : undefined }; setWeeks((items) => [...items.filter((item) => item.id !== id), newWeek].sort((a, b) => Number(a.id) - Number(b.id))); setWeekId(id); setIsUploadOpen(false) } catch (error) { setUploadError(error instanceof Error ? error.message : 'The workbook could not be read.') } finally { setIsCreating(false) } }
+  const content = page === 'projection' ? <ProjectionPage weeks={weeks} selectedWeekId={weekId} /> : !week ? <section className="panel empty-page"><h2>No operational weeks loaded</h2><p>Upload a Production QA workbook or Bulk Plan to add an operational week.</p></section> : page === 'production' ? <ProductionContent view={productionView} setView={setProductionView} week={week} onStatusChange={updateStatus} onNotesChange={updateNotes} onQueuePlanChange={updateQueuePlan} onMove={moveZip}/> : page === 'shipping' ? <ShippingPage key={`${week.id}-${week.uploadedAt}`} loads={week.loads} /> : <DashboardPage productionMetrics={metrics} loads={week.loads} records={week.productionRecords} />
+  return <AppShell activePage={page} navigationItems={nav} onNavigate={setPage}><div className="week-controls">{weeks.length > 0 && <select className="week-select" value={weekId} onChange={(event) => setWeekId(event.target.value)}>{weeks.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select>}{(page === 'production' || page === 'shipping') && <button className="primary-button" onClick={() => { setUploadDomain(page); setUploadError(''); setIsUploadOpen(true) }}>Upload {page === 'production' ? 'production' : 'Bulk Plan'}</button>}</div>{content}{isUploadOpen && <div className="modal-backdrop"><section className="upload-modal"><h2>Upload {uploadDomain === 'production' ? 'production workbook' : 'Bulk Plan'}</h2><p>The filename determines the operational week. Upload later versions as they arrive; new records are added and matching records are updated.</p><label>{uploadDomain === 'production' ? 'Production QA workbook' : 'Bulk Plan workbook'}<input ref={uploadDomain === 'production' ? productionInput : bulkPlanInput} type="file" accept=".xlsx" /></label>{uploadError && <p className="upload-error">{uploadError}</p>}<div><button className="secondary-button" onClick={() => setIsUploadOpen(false)} disabled={isCreating}>Cancel</button><button className="primary-button" onClick={() => void uploadFile()} disabled={isCreating}>{isCreating ? 'Validating file…' : `Upload ${uploadDomain === 'production' ? 'production workbook' : 'Bulk Plan'}`}</button></div></section></div>}</AppShell>
 }
-
+function ProductionContent({ view, setView, week, onStatusChange, onNotesChange, onQueuePlanChange, onMove }: { view: 'zip' | 'staffing' | 'machines' | 'moves'; setView: (view: 'zip' | 'staffing' | 'machines' | 'moves') => void; week: OperationalWeek; onStatusChange: (id: string, status: ProductionStatus) => void; onNotesChange: (id: string, notes: string) => void; onQueuePlanChange: (plan: QueuePlan) => void; onMove: (id: string, machine: string) => void }) { return <><nav className="production-subnav" aria-label="Production views"><button className={view === 'zip' ? 'active' : ''} onClick={() => setView('zip')}>ZIP Operations</button><button className={view === 'moves' ? 'active' : ''} onClick={() => setView('moves')}>Move ZIPs</button><button className={view === 'staffing' ? 'active' : ''} onClick={() => setView('staffing')}>Capacity & Staffing</button><button className={view === 'machines' ? 'active' : ''} onClick={() => setView('machines')}>Machine Progress</button></nav>{view === 'staffing' ? <><StaffingPlanner records={week.productionRecords} plan={week.queuePlan} onChange={onQueuePlanChange}/><QueueProjection records={week.productionRecords} machine={week.productionRecords[0]?.machine ?? ''} plan={week.queuePlan} onChange={onQueuePlanChange}/></> : view === 'moves' ? <><TransferActivity records={week.productionRecords}/><ZipMoveWorkspace records={week.productionRecords} onMove={onMove}/></> : <div className={view === 'machines' ? 'production-machine-view' : 'production-zip-view'}><ProductionPage records={week.productionRecords} queuePlan={week.queuePlan} onStatusChange={onStatusChange} onNotesChange={onNotesChange} onQueuePlanChange={onQueuePlanChange} /></div>}</> }
+function parseProductionUpload(buffer: ArrayBuffer, label: string, fileName: string) { const area = productionAreaFromFileName(fileName); if (isTripMappingWorkbook(buffer)) { const weekId = label.match(/\d+/)?.[0]; const existing = readHistory().find((item) => item.id === weekId); if (!existing) throw new Error('Upload the Production ZIP-list workbook for this week before importing its trip-mapping workbook.'); const mappings = parseTripMappingWorkbook(buffer); return { productionRecords: existing.productionRecords.map((record) => !area || recordArea(record) === area ? { ...record, tripNumbers: mappings.get(zipKey(record.zip)) ?? record.tripNumbers } : record), queuePlan: existing.queuePlan } } return area ? { productionRecords: parseRawProductionWorkbook(buffer, label, area), queuePlan: undefined } : parseOperationalData(buffer, undefined, label) }
+function mergeLoads(existing: Load[], incoming: Load[]) { const incomingIds = new Set(incoming.map((load) => load.id)); return [...existing.filter((load) => !incomingIds.has(load.id)), ...incoming] }
+function findWeekNumber(fileName: string) { return fileName.match(/(?:week|wk)[-_ ]?(\d{1,2})/i)?.[1] }
+function productionAreaFromFileName(fileName: string) { const name = fileName.toLowerCase(); if (name.includes('mmsi')) return 'MMSI'; if (name.includes('bost') || name.includes('prov') || name.includes('hart')) return 'PROV-BOST'; if (/\bbe\b/.test(name)) return 'BE'; if (/\bfe\b/.test(name)) return 'FE'; return undefined }
+function recordArea(record: { id: string }) { if (record.id.includes('-PROV-BOST-')) return 'PROV-BOST'; if (record.id.includes('-BE-')) return 'BE'; if (record.id.includes('-MMSI-')) return 'MMSI'; return 'FE' }
+async function hashFile(buffer: ArrayBuffer) { const hash = await window.crypto.subtle.digest('SHA-256', buffer); return `parser-v2-${[...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, '0')).join('')}` }
+function readHistory(): OperationalWeek[] { try { const raw = window.localStorage.getItem(storageKey); return raw ? JSON.parse(raw) as OperationalWeek[] : [] } catch { return [] } }
 export default App

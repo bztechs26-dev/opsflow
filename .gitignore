@@ -25,3 +25,4 @@ Thumbs.db
 
 # AWS CDK
 cdk.out/
+.opsflow-local/
