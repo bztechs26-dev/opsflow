@@ -1,0 +1,6 @@
+{
+  "app": "npx tsx bin/opsflow.ts",
+  "context": {
+    "environment": "test"
+  }
+}
