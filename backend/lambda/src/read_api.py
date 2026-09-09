@@ -6,7 +6,7 @@ from decimal import Decimal
 import json
 from typing import Any
 
-from persistence.operations import OperationsRepository
+from dynamodb.operations import OperationsRepository
 
 
 def read_operations(event: dict[str, Any]) -> dict[str, Any]:

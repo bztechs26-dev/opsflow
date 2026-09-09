@@ -3,7 +3,7 @@
 This folder contains Python application code that runs in AWS Lambda.
 
 - `lambda/src/parsers/` contains dependency-free parsers for Production QA, Bulk Plan, and ZIP/TR Projection workbooks.
-- `lambda/src/persistence/` contains the DynamoDB single-table repository.
+- `dynamodb/` contains the DynamoDB single-table repository used by the Lambda.
 - `lambda/src/import_processor.py` controls the S3 inbox → parsed records → DynamoDB → processed/failed workflow.
 - `lambda/src/upload_api.py` issues a five-minute, Cognito-protected direct S3 upload URL.
 

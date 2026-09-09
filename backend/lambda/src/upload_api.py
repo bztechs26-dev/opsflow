@@ -12,7 +12,7 @@ from uuid import uuid4
 import boto3
 
 from parsers.common import week_from_filename
-from persistence.operations import OperationsRepository
+from dynamodb.operations import OperationsRepository
 
 
 DOCUMENT_TYPES = {"production", "bulk-plan", "projection"}

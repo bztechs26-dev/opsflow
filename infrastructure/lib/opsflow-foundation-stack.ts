@@ -104,12 +104,14 @@ export class OpsflowFoundationStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    const backendLambdaPath = path.join(moduleDirectory, '../../backend/lambda/src');
+    // Package both the Lambda runtime and the separately organized DynamoDB
+    // repository under backend/. The handler adds these two paths at startup.
+    const backendPath = path.join(moduleDirectory, '../../backend');
     const healthFunction = new lambda.Function(this, 'HealthFunction', {
       functionName: 'ops-flow-valassis',
       runtime: lambda.Runtime.PYTHON_3_13,
-      handler: 'handler.handler',
-      code: lambda.Code.fromAsset(backendLambdaPath),
+      handler: 'lambda.src.handler.handler',
+      code: lambda.Code.fromAsset(backendPath),
       environment: {
         FAILED_PREFIX: 'failed/',
         INBOX_PREFIX: 'inbox/',

@@ -14,7 +14,7 @@ from parsers.bulk_plan import parse_bulk_plan
 from parsers.common import week_from_filename
 from parsers.production import parse_production
 from parsers.projection import parse_projection
-from persistence.operations import OperationsRepository
+from dynamodb.operations import OperationsRepository
 
 
 SUPPORTED_TYPES = {"production", "bulk-plan", "projection"}

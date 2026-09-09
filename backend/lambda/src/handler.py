@@ -1,5 +1,14 @@
 """AWS Lambda entry point for the OpsFlow import and health APIs."""
 
+import sys
+from pathlib import Path
+
+# The deployed asset is the complete backend/ folder, so make the Lambda
+# runtime code and the sibling dynamodb/ package available to its imports.
+_SOURCE_DIRECTORY = Path(__file__).resolve().parent
+_BACKEND_DIRECTORY = _SOURCE_DIRECTORY.parent.parent
+sys.path[:0] = [str(_SOURCE_DIRECTORY), str(_BACKEND_DIRECTORY)]
+
 from typing import Any
 
 from health import health_response
