@@ -1,5 +1,6 @@
 import * as cdk from 'aws-cdk-lib';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -8,6 +9,10 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import type { Construct } from 'constructs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 
 export interface OpsflowFoundationStackProps extends cdk.StackProps {
   environment: string;
@@ -91,78 +96,19 @@ export class OpsflowFoundationStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
+    const backendLambdaPath = path.join(moduleDirectory, '../../backend/lambda/src');
     const healthFunction = new lambda.Function(this, 'HealthFunction', {
       functionName: 'ops-flow-valassis',
       runtime: lambda.Runtime.PYTHON_3_13,
-      handler: 'index.handler',
-      code: lambda.Code.fromInline(`
-import json
-import urllib.request
-
-FOLDER_MARKERS = ('inbox/.keep', 'processed/.keep', 'failed/.keep', 'web/.keep')
-
-def send_cloudformation_response(event, context, status, data=None, reason=''):
-    body = json.dumps({
-        'Status': status,
-        'Reason': reason or f'See CloudWatch log stream: {context.log_stream_name}',
-        'PhysicalResourceId': event.get('PhysicalResourceId') or 'ops-flow-workflow-prefixes',
-        'StackId': event['StackId'],
-        'RequestId': event['RequestId'],
-        'LogicalResourceId': event['LogicalResourceId'],
-        'NoEcho': False,
-        'Data': data or {},
-    }).encode('utf-8')
-    request = urllib.request.Request(
-        event['ResponseURL'],
-        data=body,
-        headers={'content-type': '', 'content-length': str(len(body))},
-        method='PUT',
-    )
-    with urllib.request.urlopen(request) as response:
-        print(f'CloudFormation response: {response.status}')
-
-def handler(event, context):
-    # CDK invokes this branch only to maintain the agreed S3 folders and the
-    # inbox/ notification. It does not process, move, or parse uploaded files.
-    if event.get('RequestType') and event.get('ResponseURL'):
-        try:
-            if event['RequestType'] != 'Delete':
-                import boto3
-                properties = event['ResourceProperties']
-                bucket = properties['BucketName']
-                s3 = boto3.client('s3')
-                for marker in FOLDER_MARKERS:
-                    s3.put_object(Bucket=bucket, Key=marker, Body=b'')
-                s3.put_bucket_notification_configuration(
-                    Bucket=bucket,
-                    NotificationConfiguration={
-                        'LambdaFunctionConfigurations': [{
-                            'Id': 'ops-flow-inbox-trigger',
-                            'LambdaFunctionArn': properties['FunctionArn'],
-                            'Events': ['s3:ObjectCreated:*'],
-                            'Filter': {'Key': {'FilterRules': [{'Name': 'prefix', 'Value': 'inbox/'}]}},
-                        }],
-                    },
-                )
-            send_cloudformation_response(event, context, 'SUCCESS', {'folders': ','.join(FOLDER_MARKERS)})
-        except Exception as error:
-            print(f'Could not create workflow prefixes: {error}')
-            send_cloudformation_response(event, context, 'FAILED', reason=str(error))
-        return {'statusCode': 200}
-
-    records = event.get('Records', [])
-    if records and records[0].get('eventSource') == 'aws:s3':
-        # The Python parser will be added under backend/ later. For now this
-        # confirms receipt of inbox uploads without changing the source file.
-        print(json.dumps({'event': 'inbox-upload-received', 'records': len(records)}))
-        return {'statusCode': 202, 'body': json.dumps({'status': 'accepted'})}
-
-    return {
-        'statusCode': 200,
-        'headers': {'content-type': 'application/json'},
-        'body': json.dumps({'service': 'opsflow', 'status': 'ok'}),
-    }
-`),
+      handler: 'handler.handler',
+      code: lambda.Code.fromAsset(backendLambdaPath),
+      environment: {
+        FAILED_PREFIX: 'failed/',
+        INBOX_PREFIX: 'inbox/',
+        OPERATIONS_TABLE: operationsTable.tableName,
+        PROCESSED_PREFIX: 'processed/',
+        WORKFLOW_BUCKET: workflowBucket.bucketName,
+      },
       timeout: cdk.Duration.seconds(10),
       memorySize: 128,
       logGroup: healthLogGroup,
@@ -232,8 +178,15 @@ def handler(event, context):
     });
 
     const webOriginAccessControl = new cloudfront.S3OriginAccessControl(this, 'WebOriginAccessControl');
+    const wareCertificate = acm.Certificate.fromCertificateArn(
+      this,
+      'WareCertificate',
+      'arn:aws:acm:us-east-1:603437461228:certificate/4140c44b-1d23-42f0-a51e-a3172b033744',
+    );
     const webDistribution = new cloudfront.Distribution(this, 'WebDistribution', {
+      certificate: wareCertificate,
       defaultRootObject: 'index.html',
+      domainNames: ['ware.zeegraphy.com'],
       defaultBehavior: {
         origin: new WebPrefixS3Origin(workflowBucket, webOriginAccessControl),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
