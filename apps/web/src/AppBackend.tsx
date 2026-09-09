@@ -1,0 +1,91 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { clearSession, fetchWeek, fetchWeeks, loadSession, type Session, uploadWorkbook } from './api/opsflow'
+import { AppShell } from './components/AppShell'
+import { SignIn } from './components/SignIn'
+import { DashboardPage } from './pages/DashboardPage'
+import { ProductionPage } from './pages/ProductionPage'
+import { ProjectionPage } from './pages/ProjectionPage'
+import { ShippingPage } from './pages/ShippingPage'
+import type { NavigationItem, OperationalWeek, ProductionStatus } from './types/operations'
+import './App.css'
+
+const nav: NavigationItem[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: 'grid' },
+  { id: 'production', label: 'Production', icon: 'factory' },
+  { id: 'shipping', label: 'Shipping', icon: 'truck' },
+  { id: 'projection', label: 'Projection', icon: 'chart' },
+  { id: 'loads', label: 'Loads', icon: 'box' },
+  { id: 'reports', label: 'Reports', icon: 'chart' },
+]
+type UploadDomain = 'production' | 'bulk-plan'
+
+export default function AppBackend() {
+  const [session, setSession] = useState<Session | null>(loadSession)
+  if (!session) return <SignIn onSuccess={setSession} />
+  return <OperationsApp session={session} onSignOut={() => { clearSession(); setSession(null) }} />
+}
+
+function OperationsApp({ session, onSignOut }: { session: Session; onSignOut: () => void }) {
+  const [page, setPage] = useState('dashboard')
+  const [weeks, setWeeks] = useState<OperationalWeek[]>([])
+  const [weekId, setWeekId] = useState('')
+  const [isUploadOpen, setIsUploadOpen] = useState(false)
+  const [uploadDomain, setUploadDomain] = useState<UploadDomain>('production')
+  const [isUploading, setIsUploading] = useState(false)
+  const [message, setMessage] = useState('')
+  const fileInput = useRef<HTMLInputElement>(null)
+
+  const refresh = useCallback(async () => {
+    const ids = await fetchWeeks(session.idToken)
+    const values = await Promise.all(ids.map((id) => fetchWeek(id, session.idToken))) as OperationalWeek[]
+    const ordered = values.sort((left, right) => Number(left.id) - Number(right.id))
+    setWeeks(ordered)
+    setWeekId((current) => ordered.some((week) => week.id === current) ? current : ordered[0]?.id ?? '')
+  }, [session.idToken])
+
+  useEffect(() => { void refresh().catch((error) => setMessage(error instanceof Error ? error.message : 'Could not load operations.')) }, [refresh])
+
+  const week = weeks.find((item) => item.id === weekId)
+  const metrics = useMemo(() => ({
+    complete: week?.productionRecords.filter((record) => record.status === 'COMPLETE').length ?? 0,
+    total: week?.productionRecords.length ?? 0,
+  }), [week])
+
+  const upload = async () => {
+    const file = fileInput.current?.files?.[0]
+    if (!file) return setMessage(`Select a ${uploadDomain === 'production' ? 'Production QA' : 'Bulk Plan'} workbook.`)
+    setIsUploading(true); setMessage('')
+    try {
+      const importId = await uploadWorkbook(uploadDomain, file, session.idToken)
+      setIsUploadOpen(false)
+      setMessage(`Upload accepted (import ${importId}). Lambda is processing it now; the screen will refresh shortly.`)
+      window.setTimeout(() => void refresh().catch(() => undefined), 3500)
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'The workbook could not be uploaded.') }
+    finally { setIsUploading(false) }
+  }
+
+  const updateProductionStatus = (id: string, status: ProductionStatus) => setWeeks((items) => items.map((item) => item.id === weekId ? {
+    ...item, productionRecords: item.productionRecords.map((record) => record.id === id ? { ...record, status } : record),
+  } : item))
+
+  const content = page === 'projection'
+    ? <ProjectionPage weeks={weeks} selectedWeekId={weekId} token={session.idToken} />
+    : !week
+      ? <section className="panel empty-page"><h2>No operational weeks loaded</h2><p>Upload a Production QA workbook or Bulk Plan to add an operational week.</p></section>
+      : page === 'production'
+        ? <ProductionPage records={week.productionRecords} queuePlan={week.queuePlan} onStatusChange={updateProductionStatus} onNotesChange={() => undefined} onQueuePlanChange={() => undefined} />
+        : page === 'shipping'
+          ? <ShippingPage key={`${week.id}-${week.loads.length}`} loads={week.loads} />
+          : <DashboardPage productionMetrics={metrics} loads={week.loads} records={week.productionRecords} />
+
+  return <AppShell activePage={page} navigationItems={nav} onNavigate={setPage}>
+    <div className="week-controls">
+      {weeks.length > 0 && <select className="week-select" value={weekId} onChange={(event) => setWeekId(event.target.value)}>{weeks.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select>}
+      {(page === 'production' || page === 'shipping') && <button className="primary-button" onClick={() => { setUploadDomain(page === 'production' ? 'production' : 'bulk-plan'); setIsUploadOpen(true) }}>Upload {page === 'production' ? 'production' : 'Bulk Plan'}</button>}
+      <button className="secondary-button" onClick={onSignOut}>Sign out</button>
+    </div>
+    {message && <p className="upload-error">{message}</p>}
+    {content}
+    {isUploadOpen && <div className="modal-backdrop"><section className="upload-modal"><h2>Upload {uploadDomain === 'production' ? 'Production QA workbook' : 'Bulk Plan'}</h2><p>The browser uploads the original file directly to private S3. Python validates and processes it after upload.</p><label>Workbook<input ref={fileInput} type="file" accept=".xlsx" /></label><div><button className="secondary-button" onClick={() => setIsUploadOpen(false)} disabled={isUploading}>Cancel</button><button className="primary-button" onClick={() => void upload()} disabled={isUploading}>{isUploading ? 'Uploading...' : 'Upload workbook'}</button></div></section></div>}
+  </AppShell>
+}

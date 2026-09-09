@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { fetchProjectionRequirements, uploadWorkbook } from '../api/opsflow'
 import type { Load, OperationalWeek, ProductionRecord } from '../types/operations'
 
 type ProjectionRequirement = { trip: string; atz: string; jobNumber: string; requiredHH: number; sourceName: string }
@@ -9,7 +10,7 @@ type TripProjection = { load: Load; requirements: ProjectionRequirement[]; zipPr
 
 const areaLabels: Record<string, string> = { ALL: 'All operations', FRONT_END: 'Front End', BACK_END: 'Back End', SOLO: 'Solo', MMSI: 'MMSI', PROVIDENCE_BOSTON: 'Providence / Boston', UNASSIGNED: 'Other' }
 
-export function ProjectionPage({ weeks, selectedWeekId }: { weeks: OperationalWeek[]; selectedWeekId: string }) {
+export function ProjectionPage({ weeks, selectedWeekId, token = '' }: { weeks: OperationalWeek[]; selectedWeekId: string; token?: string }) {
   const input = useRef<HTMLInputElement>(null)
   const [weekId, setWeekId] = useState(selectedWeekId || weeks[0]?.id || '')
   const [area, setArea] = useState('ALL')
@@ -29,12 +30,9 @@ export function ProjectionPage({ weeks, selectedWeekId }: { weeks: OperationalWe
   const refreshRequirements = useCallback(async () => {
     if (!weekId) return setRequirements([])
     try {
-      const response = await fetch(`/api/projections?week=${encodeURIComponent(weekId)}`)
-      if (!response.ok) throw new Error('Projection storage is unavailable. Restart the development server and try again.')
-      const data = await response.json() as { requirements: ProjectionRequirement[] }
-      setRequirements(data.requirements)
+      setRequirements(await fetchProjectionRequirements(weekId, token) as ProjectionRequirement[])
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Projection storage is unavailable.') }
-  }, [weekId])
+  }, [token, weekId])
 
   useEffect(() => { const timer = window.setTimeout(() => void refreshRequirements(), 0); return () => window.clearTimeout(timer) }, [refreshRequirements])
 
@@ -43,12 +41,9 @@ export function ProjectionPage({ weeks, selectedWeekId }: { weeks: OperationalWe
     if (!file || !weekId) return setMessage('Choose a shipping week and ZIP/TR workbook first.')
     setIsUploading(true); setMessage('')
     try {
-      const form = new FormData(); form.set('week', weekId); form.set('file', file)
-      const response = await fetch('/api/projections/upload', { method: 'POST', body: form })
-      const data = await response.json() as { message?: string }
-      if (!response.ok) throw new Error(data.message ?? 'The ZIP/TR workbook could not be stored.')
-      setMessage(data.message ?? 'ZIP/TR mappings stored.'); if (input.current) input.current.value = ''
-      await refreshRequirements()
+      const importId = await uploadWorkbook('projection', file, token)
+      setMessage(`Upload accepted (import ${importId}). Lambda is processing the ZIP/TR mappings now.`); if (input.current) input.current.value = ''
+      window.setTimeout(() => void refreshRequirements(), 3500)
     } catch (error) { setMessage(error instanceof Error ? error.message : 'The ZIP/TR workbook could not be stored.') } finally { setIsUploading(false) }
   }
 

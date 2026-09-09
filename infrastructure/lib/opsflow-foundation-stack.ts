@@ -78,6 +78,14 @@ export class OpsflowFoundationStack extends cdk.Stack {
       encryption: s3.BucketEncryption.S3_MANAGED,
       enforceSSL: true,
       versioned: true,
+      cors: [
+        {
+          allowedHeaders: ['content-type'],
+          allowedMethods: [s3.HttpMethods.PUT],
+          allowedOrigins: ['https://ware.zeegraphy.com', 'http://localhost:5173'],
+          maxAge: 300,
+        },
+      ],
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
@@ -107,10 +115,11 @@ export class OpsflowFoundationStack extends cdk.Stack {
         INBOX_PREFIX: 'inbox/',
         OPERATIONS_TABLE: operationsTable.tableName,
         PROCESSED_PREFIX: 'processed/',
+        WEB_ORIGIN: 'https://ware.zeegraphy.com',
         WORKFLOW_BUCKET: workflowBucket.bucketName,
       },
-      timeout: cdk.Duration.seconds(10),
-      memorySize: 128,
+      timeout: cdk.Duration.seconds(60),
+      memorySize: 512,
       logGroup: healthLogGroup,
     });
 
@@ -126,14 +135,20 @@ export class OpsflowFoundationStack extends cdk.Stack {
     const workflowBucketResource = workflowBucket.node.defaultChild as s3.CfnBucket;
 
     healthFunction.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'],
+      resources: ['inbox/*', 'processed/*', 'failed/*']
+        .map((prefix) => `arn:${cdk.Aws.PARTITION}:s3:::ops-flow-valassis/${prefix}`),
+    }));
+    // The CDK custom resource creates this single marker for the private web origin.
+    healthFunction.addToRolePolicy(new iam.PolicyStatement({
       actions: ['s3:PutObject'],
-      resources: ['inbox/.keep', 'processed/.keep', 'failed/.keep', 'web/.keep']
-        .map((marker) => `arn:${cdk.Aws.PARTITION}:s3:::ops-flow-valassis/${marker}`),
+      resources: [workflowBucket.arnForObjects('web/.keep')],
     }));
     healthFunction.addToRolePolicy(new iam.PolicyStatement({
       actions: ['s3:PutBucketNotification'],
       resources: [workflowBucket.bucketArn],
     }));
+    operationsTable.grantReadWriteData(healthFunction);
     const workflowPrefixes = new cdk.CfnResource(this, 'WorkflowPrefixes', {
       type: 'Custom::OpsflowWorkflowPrefixes',
       properties: {
@@ -147,6 +162,11 @@ export class OpsflowFoundationStack extends cdk.Stack {
     workflowPrefixes.addResourceDependency(inboxUploadPermission);
 
     const api = new apigateway.RestApi(this, 'Api', {
+      defaultCorsPreflightOptions: {
+        allowHeaders: ['content-type', 'authorization'],
+        allowMethods: ['OPTIONS', 'GET', 'POST'],
+        allowOrigins: ['https://ware.zeegraphy.com', 'http://localhost:5173'],
+      },
       deployOptions: {
         loggingLevel: apigateway.MethodLoggingLevel.ERROR,
         metricsEnabled: true,
@@ -175,6 +195,27 @@ export class OpsflowFoundationStack extends cdk.Stack {
       },
       generateSecret: false,
       preventUserExistenceErrors: true,
+    });
+    const apiAuthorizer = new apigateway.CognitoUserPoolsAuthorizer(this, 'ApiAuthorizer', {
+      cognitoUserPools: [userPool],
+    });
+    const uploadResource = api.root.addResource('uploads').addResource('{documentType}');
+    uploadResource.addMethod('POST', new apigateway.LambdaIntegration(healthFunction), {
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+      authorizer: apiAuthorizer,
+    });
+    const weeksResource = api.root.addResource('weeks');
+    weeksResource.addMethod('GET', new apigateway.LambdaIntegration(healthFunction), {
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+      authorizer: apiAuthorizer,
+    });
+    weeksResource.addResource('{week}').addMethod('GET', new apigateway.LambdaIntegration(healthFunction), {
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+      authorizer: apiAuthorizer,
+    });
+    api.root.addResource('projections').addMethod('GET', new apigateway.LambdaIntegration(healthFunction), {
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+      authorizer: apiAuthorizer,
     });
 
     const webOriginAccessControl = new cloudfront.S3OriginAccessControl(this, 'WebOriginAccessControl');

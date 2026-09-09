@@ -2,12 +2,13 @@
 
 This folder contains Python application code that runs in AWS Lambda.
 
-- `lambda/src/` contains the deployed Lambda handler and its small supporting modules.
-- `dynamodb/` is reserved for DynamoDB repositories and domain persistence code. No business writes are implemented yet.
+- `lambda/src/parsers/` contains dependency-free parsers for Production QA, Bulk Plan, and ZIP/TR Projection workbooks.
+- `lambda/src/persistence/` contains the DynamoDB single-table repository.
+- `lambda/src/import_processor.py` controls the S3 inbox → parsed records → DynamoDB → processed/failed workflow.
+- `lambda/src/upload_api.py` issues a five-minute, Cognito-protected direct S3 upload URL.
 
-The Lambda currently has two intentionally small responsibilities:
+The raw workbook is always retained in S3. Parsed operational fields are stored in DynamoDB; the entire workbook is never copied there. Each import uses an immutable `inbox/{type}/{import-id}/{file}` key so duplicate S3 notifications do not create a second import.
 
-1. return the API Gateway `/health` response;
-2. log uploads created under `s3://ops-flow-valassis/inbox/`.
+## Production Zip List intake
 
-It does not parse, move, or store uploaded files yet. Those behaviours will be added only after the file format and DynamoDB data contract are agreed.
+Production uploads must use `Zip List <AREA> Wk <week>.xlsx`, for example `Zip List FE Wk 36.xlsx`. The Lambda extracts `FE` (or another uppercase area code) and `36` from the filename. Each such workbook is expected to have one worksheet; only that worksheet is read. No other worksheet is scanned, and only the parsed operational fields—not the source workbook—are written to DynamoDB.
