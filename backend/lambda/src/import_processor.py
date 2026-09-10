@@ -40,7 +40,7 @@ def _process_one(bucket: str, key: str) -> None:
     week = int(week_from_filename(file_name))
     context = OperationalContext(os.environ["DEFAULT_ORGANIZATION_ID"], year, week)
     area = _import_area(document_type, file_name)
-    repository = OperationsRepository()
+    repository = OperationalRepository()
     existing = repository.import_metadata(context, document_type, area, import_id)
     if existing and existing.get("status") in {"PROCESSED", "FAILED"}:
         log_event("inbox-upload-duplicate-event-ignored", importId=import_id, key=key, status=existing["status"])

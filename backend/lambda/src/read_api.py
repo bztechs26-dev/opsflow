@@ -12,7 +12,7 @@ from dynamodb.operational_repository import OperationalRepository
 
 
 def read_operations(event: dict[str, Any]) -> dict[str, Any]:
-    repository = OperationsRepository()
+    repository = OperationalRepository()
     path = event.get("resource")
     organization_id = os.environ["DEFAULT_ORGANIZATION_ID"]
     query = event.get("queryStringParameters") or {}
