@@ -36,7 +36,7 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         log_event("upload-url-requested", requestId=request_id, documentType=(event.get("pathParameters") or {}).get("documentType"))
         return create_upload_url(event)
 
-    if event.get("httpMethod") == "GET" and event.get("resource") in {"/weeks", "/weeks/{week}", "/projections"}:
+    if event.get("httpMethod") == "GET" and event.get("resource") in {"/weeks", "/weeks/{week}", "/projections", "/imports/{importId}"}:
         return read_operations(event)
 
     log_event("health-check-received", requestId=request_id)

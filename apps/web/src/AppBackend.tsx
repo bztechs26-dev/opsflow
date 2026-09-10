@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { clearSession, fetchWeek, fetchWeeks, loadSession, type Session, uploadWorkbook } from './api/opsflow'
+import { clearSession, fetchImportStatus, fetchWeek, fetchWeeks, loadSession, type Session, uploadWorkbook } from './api/opsflow'
 import { AppShell } from './components/AppShell'
 import { SignIn } from './components/SignIn'
 import { DashboardPage } from './pages/DashboardPage'
@@ -32,6 +32,7 @@ function OperationsApp({ session, onSignOut }: { session: Session; onSignOut: ()
   const [isUploadOpen, setIsUploadOpen] = useState(false)
   const [uploadDomain, setUploadDomain] = useState<UploadDomain>('production')
   const [isUploading, setIsUploading] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
   const [message, setMessage] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
 
@@ -58,10 +59,19 @@ function OperationsApp({ session, onSignOut }: { session: Session; onSignOut: ()
     try {
       const importId = await uploadWorkbook(uploadDomain, file, session.idToken)
       setIsUploadOpen(false)
-      setMessage(`Upload accepted (import ${importId}). Lambda is processing it now; the screen will refresh shortly.`)
-      window.setTimeout(() => void refresh().catch(() => undefined), 3500)
+      setIsProcessing(true)
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        await delay(1500)
+        const status = await fetchImportStatus(importId, session.idToken)
+        if (status === 'PROCESSED') {
+          await refresh()
+          return
+        }
+        if (status === 'FAILED') throw new Error('We could not process that workbook. Please check the file and try again.')
+      }
+      setMessage('Your workbook is taking a little longer than expected. Please refresh in a moment.')
     } catch (error) { setMessage(error instanceof Error ? error.message : 'The workbook could not be uploaded.') }
-    finally { setIsUploading(false) }
+    finally { setIsUploading(false); setIsProcessing(false) }
   }
 
   const updateProductionStatus = (id: string, status: ProductionStatus) => setWeeks((items) => items.map((item) => item.id === weekId ? {
@@ -87,5 +97,8 @@ function OperationsApp({ session, onSignOut }: { session: Session; onSignOut: ()
     {message && <p className="upload-error">{message}</p>}
     {content}
     {isUploadOpen && <div className="modal-backdrop"><section className="upload-modal"><h2>Upload {uploadDomain === 'production' ? 'Production QA workbook' : 'Bulk Plan'}</h2><p>The browser uploads the original file directly to private S3. Python validates and processes it after upload.</p><label>Workbook<input ref={fileInput} type="file" accept=".xlsx" /></label><div><button className="secondary-button" onClick={() => setIsUploadOpen(false)} disabled={isUploading}>Cancel</button><button className="primary-button" onClick={() => void upload()} disabled={isUploading}>{isUploading ? 'Uploading...' : 'Upload workbook'}</button></div></section></div>}
+    {isProcessing && <div className="processing-overlay" role="status" aria-live="polite"><section className="processing-card"><span className="processing-spinner" aria-hidden="true" /><div><h2>Preparing your operational data</h2><p>Your workbook is being validated and added to the dashboard. This page will update automatically.</p></div></section></div>}
   </AppShell>
 }
+
+function delay(milliseconds: number) { return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds)) }

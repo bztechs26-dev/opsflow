@@ -57,6 +57,13 @@ export async function fetchWeek(week: string, token: string) {
   return response.json()
 }
 
+export async function fetchImportStatus(importId: string, token: string) {
+  const response = await request(`/imports/${encodeURIComponent(importId)}`, token)
+  const data = await response.json() as { status?: 'PENDING_UPLOAD' | 'PROCESSING' | 'PROCESSED' | 'FAILED'; message?: string }
+  if (!response.ok || !data.status) throw new Error(data.message ?? 'Could not check upload progress.')
+  return data.status
+}
+
 export async function fetchProjectionRequirements(week: string, token: string) {
   const response = await request(`/projections?week=${encodeURIComponent(week)}`, token)
   const data = await response.json() as { requirements?: unknown[]; message?: string }
