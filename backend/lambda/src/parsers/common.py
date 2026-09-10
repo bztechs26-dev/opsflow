@@ -5,9 +5,15 @@ from __future__ import annotations
 import re
 
 
-WEEK_PATTERN = re.compile(r"\b(?:wk|week)\b[.\s_-]*(\d{1,2})\b", re.IGNORECASE)
+# Browser uploads use a safe S3 filename, replacing spaces with underscores.
+# Support both the user-facing name ("Zip List FE Wk 36.xlsx") and its S3 key
+# form ("Zip_List_FE_Wk_36.xlsx").
+WEEK_PATTERN = re.compile(
+    r"(?:^|[^A-Za-z0-9])(?:wk|week)[.\s_-]*(\d{1,2})(?:\b|$)",
+    re.IGNORECASE,
+)
 ZIP_LIST_AREA_PATTERN = re.compile(
-    r"\bzip\s+list\s+([A-Za-z][A-Za-z0-9_-]*)\s+(?:wk|week)\b",
+    r"(?:^|[^A-Za-z0-9])zip[ _-]+list[ _-]+([A-Za-z][A-Za-z0-9-]*)[ _-]+(?:wk|week)[.\s_-]*\d{1,2}(?:\b|$)",
     re.IGNORECASE,
 )
 ZIP_PATTERN = re.compile(r"^\d{3,5}(?:\s+[A-Za-z](?:\d+)?)?$")
