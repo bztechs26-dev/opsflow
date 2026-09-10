@@ -31,6 +31,10 @@ def parse_production(contents: bytes, week: str, file_name: str) -> dict[str, An
         source_area = requested_area
         area_records = []
         for row in workbook.rows(sheet_name):
+            # A Zip List's first Total row closes the requested area's block.
+            # Do not continue into a later section of the worksheet.
+            if text(_value(row, 0)).strip().lower() == "total:":
+                break
             if not row or not is_zip(_value(row, 0)) or number(_value(row, 1)) <= 0:
                 continue
             zip_value = format_zip(_value(row, 0))

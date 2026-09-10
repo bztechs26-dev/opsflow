@@ -54,7 +54,7 @@ def _process_one(bucket: str, key: str) -> None:
             return
         parsed = _parse(document_type, contents, str(week), file_name)
         count = repository.upsert_import_records(context, document_type, parsed, import_id, key)
-        processed_key = f"{os.environ['PROCESSED_PREFIX']}{document_type}/year-{year}/week-{week:02d}/{import_id}/{file_name}"
+        processed_key = f"{os.environ['PROCESSED_PREFIX']}{document_type}/year-{year}/week-{week:02d}/{file_name}"
         _move_object(s3, bucket, key, processed_key)
         repository.complete_import(context, document_type, area, import_id, processed_key, count)
         log_event(
