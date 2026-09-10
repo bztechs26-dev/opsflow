@@ -26,3 +26,7 @@ Thumbs.db
 # AWS CDK
 cdk.out/
 .opsflow-local/
+
+# Python runtime artifacts
+__pycache__/
+*.py[cod]
