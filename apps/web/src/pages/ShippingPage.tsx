@@ -1,6 +1,5 @@
 import { Fragment, useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
-import { shippingMockLoads } from '../data/shippingMock'
 import type { Load, LoadStatus } from '../types/operations'
 import { StatusBadge, formatStatus } from './ProductionPage'
 
@@ -8,7 +7,9 @@ const statuses: LoadStatus[] = ['PLANNED', 'SCHEDULED', 'READY', 'DELAYED', 'LOA
 const areaLabels: Record<string, string> = { ALL: 'All operations', FRONT_END: 'Front End', BACK_END: 'Back End', SOLO: 'Solo', MMSI: 'MMSI', PROVIDENCE_BOSTON: 'Providence / Boston', UNASSIGNED: 'Other' }
 
 export function ShippingPage({ loads }: { loads: Load[] }) {
-  const source = loads.length ? loads : shippingMockLoads
+  // This view is intentionally backed only by imported DynamoDB data.
+  // Never substitute demonstration loads when an operational week has no Bulk Plan.
+  const source = loads
   const [records, setRecords] = useState(source); const [selectedId, setSelectedId] = useState(source[0]?.id ?? ''); const [area, setArea] = useState('ALL'); const [statusFilter, setStatusFilter] = useState('ALL'); const [typeFilter, setTypeFilter] = useState('ALL'); const [carrierFilter, setCarrierFilter] = useState('ALL'); const [search, setSearch] = useState(''); const [collapsed, setCollapsed] = useState(() => new Set(source.filter((load) => load.routeRole === 'HUB_SPOKE').map(routeKey))); const [drawerOpen, setDrawerOpen] = useState(false); const [exportFormat, setExportFormat] = useState<ExportFormat>('XLSX')
   const areas = useMemo(() => [...new Set(records.map((record) => record.area ?? 'UNASSIGNED'))], [records]); const areaRecords = records.filter((record) => area === 'ALL' || (record.area ?? 'UNASSIGNED') === area); const carriers = [...new Set(areaRecords.map((record) => record.carrier))].sort(); const types = [...new Set(areaRecords.map((record) => record.destinationType ?? inferType(record.destination)))].sort()
   const filtered = areaRecords.filter((record) => (statusFilter === 'ALL' || record.status === statusFilter) && (typeFilter === 'ALL' || (record.destinationType ?? inferType(record.destination)) === typeFilter) && (carrierFilter === 'ALL' || record.carrier === carrierFilter) && `${record.number} ${record.destination} ${record.carrier}`.toLowerCase().includes(search.toLowerCase())); const selected = records.find((record) => record.id === selectedId) ?? filtered[0]; const count = (status: LoadStatus) => areaRecords.filter((record) => record.status === status).length
