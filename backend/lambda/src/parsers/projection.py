@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from dynamodb.keys import projection_record_id
 from parsers.common import mapping_area_from_filename, normalize_atz, text, whole_number
 from parsers.xlsx_reader import XlsxWorkbook
 
@@ -32,13 +33,20 @@ def parse_projection(contents: bytes, week: str, file_name: str) -> dict[str, An
             if current:
                 current["requiredHH"] += whole_number(_value(row, 5))
             else:
+                source_area = mapping_area_from_filename(file_name)
                 requirements[key] = {
                     "week": week,
                     "trip": trip,
                     "atz": atz,
                     "jobNumber": job_number,
                     "requiredHH": whole_number(_value(row, 5)),
-                    "sourceArea": mapping_area_from_filename(file_name),
+                    "sourceArea": source_area,
+                    "recordId": projection_record_id(
+                        area=source_area,
+                        trip=trip,
+                        atz=atz,
+                        job_number=job_number,
+                    ),
                 }
     if not requirements:
         raise ValueError("No ZIP/TR mappings were found. The workbook must have ZIP in column A and TR in column C.")

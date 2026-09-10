@@ -2,10 +2,6 @@
 
 This folder contains the DynamoDB repository used by the Python Lambda.
 
-`operations.py` owns the single-table access pattern for `ops-flow-valassis`:
+`keys.py` is the single authority for validated key construction. The active repository is `operational_repository.py`; it writes organization/year/week isolated data and preserves user-maintained status during normal re-imports. `operations.py` is a deprecated legacy prototype and is not imported at runtime.
 
-- import metadata: `IMPORT#{importId}` / `METADATA`;
-- operational data: `WEEK#{week}` partition keys for production, loads, and projection mappings;
-- available-week index: `CONTROL` / `WEEK#{week}`.
-
-It creates pending-import records, replaces the relevant records for an uploaded workbook, records completion or failure, and provides the read queries used by the web application. Raw Excel files remain in S3; only parsed operational fields are persisted here.
+See [DATA_MODEL.md](DATA_MODEL.md) for the complete key patterns, deterministic record identity, re-import policy, relationship items, and query decisions.

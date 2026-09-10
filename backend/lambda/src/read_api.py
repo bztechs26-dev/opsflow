@@ -4,28 +4,33 @@ from __future__ import annotations
 
 from decimal import Decimal
 import json
+import os
 from typing import Any
 
-from dynamodb.operations import OperationsRepository
+from dynamodb.keys import OperationalContext, validate_year
+from dynamodb.operational_repository import OperationalRepository
 
 
 def read_operations(event: dict[str, Any]) -> dict[str, Any]:
     repository = OperationsRepository()
     path = event.get("resource")
+    organization_id = os.environ["DEFAULT_ORGANIZATION_ID"]
+    query = event.get("queryStringParameters") or {}
+    year = validate_year(query.get("year", os.environ["DEFAULT_OPERATIONAL_YEAR"]))
     if path == "/weeks":
-        weeks = repository.list_weeks()
+        weeks = repository.list_weeks(organization_id, year)
         return _response(200, {"weeks": weeks})
     if path == "/weeks/{week}":
         week = (event.get("pathParameters") or {}).get("week", "")
-        return _response(200, repository.week_data(week))
+        return _response(200, repository.week_data(OperationalContext(organization_id, year, week)))
     if path == "/projections":
-        week = (event.get("queryStringParameters") or {}).get("week", "")
+        week = query.get("week", "")
         if not week:
             return _response(400, {"message": "week is required."})
-        return _response(200, {"requirements": repository.week_data(week)["projectionRequirements"]})
+        return _response(200, {"requirements": repository.week_data(OperationalContext(organization_id, year, week))["projectionRequirements"]})
     if path == "/imports/{importId}":
         import_id = (event.get("pathParameters") or {}).get("importId", "")
-        metadata = repository.import_metadata(import_id)
+        metadata = repository.import_metadata_by_id(organization_id, import_id)
         if not metadata:
             return _response(404, {"message": "Upload not found."})
         # Only return the fields needed by the progress indicator. Internal S3

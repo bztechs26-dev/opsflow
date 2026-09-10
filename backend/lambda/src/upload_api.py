@@ -11,8 +11,9 @@ from uuid import uuid4
 
 import boto3
 
-from parsers.common import week_from_filename
-from dynamodb.operations import OperationsRepository
+from parsers.common import mapping_area_from_filename, source_area_from_filename, week_from_filename
+from dynamodb.keys import OperationalContext, validate_year
+from dynamodb.operational_repository import OperationalRepository
 
 
 DOCUMENT_TYPES = {"production", "bulk-plan", "projection"}
@@ -29,15 +30,18 @@ def create_upload_url(event: dict[str, Any]) -> dict[str, Any]:
         file_name = str(payload.get("fileName", "")).strip()
         content_type = str(payload.get("contentType", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
         file_size = int(payload.get("fileSize", 0))
+        operational_year = validate_year(payload.get("operationalYear"))
         if not file_name.lower().endswith(".xlsx"):
             raise ValueError("Use an Excel (.xlsx) workbook.")
         if not 0 < file_size <= MAX_UPLOAD_BYTES:
             raise ValueError("The workbook must be between 1 byte and 10 MB.")
-        week_from_filename(file_name)
+        week = int(week_from_filename(file_name))
+        context = OperationalContext(os.environ["DEFAULT_ORGANIZATION_ID"], operational_year, week)
+        area = _import_area(document_type, file_name)
         import_id = str(uuid4())
         safe_name = SAFE_FILENAME.sub("_", file_name)
-        object_key = f"inbox/{document_type}/{import_id}/{safe_name}"
-        OperationsRepository().create_pending_import(import_id, document_type, safe_name, object_key)
+        object_key = f"inbox/{document_type}/{context.year}/{import_id}/{safe_name}"
+        OperationsRepository().create_pending_import(context, document_type, area, import_id, safe_name, object_key)
         upload_url = boto3.client("s3").generate_presigned_url(
             "put_object",
             Params={
@@ -48,7 +52,7 @@ def create_upload_url(event: dict[str, Any]) -> dict[str, Any]:
             ExpiresIn=300,
             HttpMethod="PUT",
         )
-        return _response(201, {"importId": import_id, "objectKey": object_key, "uploadUrl": upload_url, "expiresInSeconds": 300})
+        return _response(201, {"importId": import_id, "objectKey": object_key, "uploadUrl": upload_url, "expiresInSeconds": 300, "operationalYear": context.year, "week": context.week, "area": area})
     except (TypeError, ValueError) as error:
         return _response(400, {"message": str(error)})
 
@@ -78,3 +82,14 @@ def _response(status_code: int, payload: dict[str, Any]) -> dict[str, Any]:
 
 def _allowed_origin() -> str:
     return os.environ.get("WEB_ORIGIN", "https://ware.zeegraphy.com")
+
+
+def _import_area(document_type: str, file_name: str) -> str:
+    if document_type == "production":
+        area = source_area_from_filename(file_name)
+        if not area:
+            raise ValueError("Production files must be named Zip List <AREA> Wk <week>.xlsx.")
+        return area
+    if document_type == "projection":
+        return mapping_area_from_filename(file_name)
+    return "ALL"

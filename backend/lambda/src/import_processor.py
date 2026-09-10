@@ -11,10 +11,11 @@ import boto3
 
 from log_events import log_event
 from parsers.bulk_plan import parse_bulk_plan
-from parsers.common import week_from_filename
+from parsers.common import mapping_area_from_filename, source_area_from_filename, week_from_filename
 from parsers.production import parse_production
 from parsers.projection import parse_projection
-from dynamodb.operations import OperationsRepository
+from dynamodb.keys import OperationalContext
+from dynamodb.operational_repository import OperationalRepository
 
 
 SUPPORTED_TYPES = {"production", "bulk-plan", "projection"}
@@ -35,9 +36,12 @@ def process_inbox_uploads(event: dict[str, Any]) -> dict[str, Any]:
 
 
 def _process_one(bucket: str, key: str) -> None:
-    document_type, import_id, file_name = _upload_identity(key)
+    document_type, year, import_id, file_name = _upload_identity(key)
+    week = int(week_from_filename(file_name))
+    context = OperationalContext(os.environ["DEFAULT_ORGANIZATION_ID"], year, week)
+    area = _import_area(document_type, file_name)
     repository = OperationsRepository()
-    existing = repository.import_metadata(import_id)
+    existing = repository.import_metadata(context, document_type, area, import_id)
     if existing and existing.get("status") in {"PROCESSED", "FAILED"}:
         log_event("inbox-upload-duplicate-event-ignored", importId=import_id, key=key, status=existing["status"])
         return
@@ -46,19 +50,18 @@ def _process_one(bucket: str, key: str) -> None:
         source = s3.get_object(Bucket=bucket, Key=key)
         contents = source["Body"].read()
         checksum = hashlib.sha256(contents).hexdigest()
-        if not repository.begin_import(import_id, document_type, file_name, key, checksum):
+        if not repository.begin_import(context, document_type, area, import_id, checksum):
             return
-        week = week_from_filename(file_name)
-        parsed = _parse(document_type, contents, week, file_name)
-        count = repository.replace_import_records(document_type, week, parsed, import_id, key)
-        processed_key = f"{os.environ['PROCESSED_PREFIX']}{document_type}/week-{week}/{import_id}/{file_name}"
+        parsed = _parse(document_type, contents, str(week), file_name)
+        count = repository.upsert_import_records(context, document_type, parsed, import_id, key)
+        processed_key = f"{os.environ['PROCESSED_PREFIX']}{document_type}/year-{year}/week-{week:02d}/{import_id}/{file_name}"
         _move_object(s3, bucket, key, processed_key)
-        repository.complete_import(import_id, week, processed_key, count)
+        repository.complete_import(context, document_type, area, import_id, processed_key, count)
         log_event(
             "inbox-upload-processed",
             importId=import_id,
             documentType=document_type,
-            week=week,
+            year=year, week=week,
             records=count,
             processedKey=processed_key,
         )
@@ -69,19 +72,23 @@ def _process_one(bucket: str, key: str) -> None:
         except Exception as move_error:
             log_event("inbox-upload-failed-file-move", importId=import_id, key=key, error=str(move_error))
             failed_key = None
-        repository.fail_import(import_id, str(error), failed_key)
+        repository.fail_import(context, document_type, area, import_id, str(error), failed_key)
         log_event("inbox-upload-failed", importId=import_id, documentType=document_type, key=key, error=str(error))
         raise
 
 
-def _upload_identity(key: str) -> tuple[str, str, str]:
+def _upload_identity(key: str) -> tuple[str, int, str, str]:
     parts = key.split("/")
-    if len(parts) != 4 or parts[0] != "inbox" or parts[1] not in SUPPORTED_TYPES:
-        raise ValueError("Inbox files must use inbox/{production|bulk-plan|projection}/{import-id}/{filename}.")
-    document_type, import_id, file_name = parts[1:]
+    if len(parts) != 5 or parts[0] != "inbox" or parts[1] not in SUPPORTED_TYPES:
+        raise ValueError("Inbox files must use inbox/{production|bulk-plan|projection}/{year}/{import-id}/{filename}.")
+    document_type, year_text, import_id, file_name = parts[1:]
+    try:
+        year = int(year_text)
+    except ValueError as error:
+        raise ValueError("Inbox uploads must include a valid operational year.") from error
     if not import_id or not file_name.lower().endswith(".xlsx"):
         raise ValueError("Inbox uploads must be Excel (.xlsx) workbooks.")
-    return document_type, import_id, file_name
+    return document_type, year, import_id, file_name
 
 
 def _parse(document_type: str, contents: bytes, week: str, file_name: str) -> dict[str, Any]:
@@ -97,3 +104,14 @@ def _parse(document_type: str, contents: bytes, week: str, file_name: str) -> di
 def _move_object(s3: Any, bucket: str, source_key: str, destination_key: str) -> None:
     s3.copy_object(Bucket=bucket, Key=destination_key, CopySource={"Bucket": bucket, "Key": source_key})
     s3.delete_object(Bucket=bucket, Key=source_key)
+
+
+def _import_area(document_type: str, file_name: str) -> str:
+    if document_type == "production":
+        area = source_area_from_filename(file_name)
+        if not area:
+            raise ValueError("Production files must be named Zip List <AREA> Wk <week>.xlsx.")
+        return area
+    if document_type == "projection":
+        return mapping_area_from_filename(file_name)
+    return "ALL"

@@ -1,4 +1,10 @@
-"""Single-table DynamoDB persistence for the three OpsFlow workbook types."""
+"""Deprecated pre-operational-model repository.
+
+Runtime imports use :mod:`dynamodb.operational_repository`.  This module is
+kept temporarily only to avoid breaking historical local experiments; it must
+not be used for new reads or writes because its ``WEEK#<week>`` keys lack year
+and organization isolation.
+"""
 
 from __future__ import annotations
 
@@ -15,7 +21,7 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-class OperationsRepository:
+class LegacyOperationsRepository:
     """Persist imports and operational records in the ops-flow-valassis table."""
 
     def __init__(self, table_name: str | None = None):

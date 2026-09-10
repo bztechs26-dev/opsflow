@@ -119,6 +119,10 @@ export class OpsflowFoundationStack extends cdk.Stack {
         PROCESSED_PREFIX: 'processed/',
         WEB_ORIGIN: 'https://ware.zeegraphy.com',
         WORKFLOW_BUCKET: workflowBucket.bucketName,
+        // Explicit development defaults. The Lambda never derives a year from
+        // the clock; the upload API must receive operationalYear as well.
+        DEFAULT_ORGANIZATION_ID: 'opsflow-dev',
+        DEFAULT_OPERATIONAL_YEAR: '2026',
       },
       timeout: cdk.Duration.seconds(60),
       memorySize: 512,
@@ -166,7 +170,7 @@ export class OpsflowFoundationStack extends cdk.Stack {
     const api = new apigateway.RestApi(this, 'Api', {
       defaultCorsPreflightOptions: {
         allowHeaders: ['content-type', 'authorization'],
-        allowMethods: ['OPTIONS', 'GET', 'POST'],
+        allowMethods: ['OPTIONS', 'GET', 'POST', 'PATCH'],
         allowOrigins: ['https://ware.zeegraphy.com', 'http://localhost:5173'],
       },
       deployOptions: {
@@ -223,6 +227,17 @@ export class OpsflowFoundationStack extends cdk.Stack {
       authorizationType: apigateway.AuthorizationType.COGNITO,
       authorizer: apiAuthorizer,
     });
+    api.root
+      .addResource('production')
+      .addResource('{year}')
+      .addResource('{week}')
+      .addResource('{area}')
+      .addResource('{recordId}')
+      .addResource('status')
+      .addMethod('PATCH', new apigateway.LambdaIntegration(healthFunction), {
+        authorizationType: apigateway.AuthorizationType.COGNITO,
+        authorizer: apiAuthorizer,
+      });
 
     const webOriginAccessControl = new cloudfront.S3OriginAccessControl(this, 'WebOriginAccessControl');
     const wareCertificate = acm.Certificate.fromCertificateArn(

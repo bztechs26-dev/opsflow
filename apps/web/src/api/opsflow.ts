@@ -2,6 +2,7 @@ const apiBaseUrl = import.meta.env.VITE_OPSFLOW_API_URL ?? 'https://v4ir0xojhi.e
 const cognitoClientId = import.meta.env.VITE_COGNITO_CLIENT_ID ?? '71r59jf5vri40sjnpr86sisqm2'
 const cognitoRegion = 'us-east-1'
 const sessionKey = 'opsflow.cognito-session'
+export const operationalYear = Number(import.meta.env.VITE_OPSFLOW_OPERATIONAL_YEAR ?? '2026')
 
 export type Session = { idToken: string; expiresAt: number }
 type UploadType = 'production' | 'bulk-plan' | 'projection'
@@ -35,7 +36,7 @@ export async function signIn(username: string, password: string): Promise<Sessio
 export async function uploadWorkbook(type: UploadType, file: File, token: string) {
   const response = await request(`/uploads/${type}`, token, {
     method: 'POST',
-    body: JSON.stringify({ fileName: file.name, fileSize: file.size, contentType: file.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+    body: JSON.stringify({ operationalYear, fileName: file.name, fileSize: file.size, contentType: file.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
   })
   const data = await response.json() as { message?: string; uploadUrl?: string; importId?: string }
   if (!response.ok || !data.uploadUrl || !data.importId) throw new Error(data.message ?? 'Could not prepare the workbook upload.')
@@ -45,14 +46,14 @@ export async function uploadWorkbook(type: UploadType, file: File, token: string
 }
 
 export async function fetchWeeks(token: string) {
-  const response = await request('/weeks', token)
+  const response = await request(`/weeks?year=${operationalYear}`, token)
   const data = await response.json() as { weeks?: string[]; message?: string }
   if (!response.ok) throw new Error(data.message ?? 'Could not load operational weeks.')
   return data.weeks ?? []
 }
 
 export async function fetchWeek(week: string, token: string) {
-  const response = await request(`/weeks/${encodeURIComponent(week)}`, token)
+  const response = await request(`/weeks/${encodeURIComponent(week)}?year=${operationalYear}`, token)
   if (!response.ok) throw new Error('Could not load the selected operational week.')
   return response.json()
 }
@@ -65,10 +66,19 @@ export async function fetchImportStatus(importId: string, token: string) {
 }
 
 export async function fetchProjectionRequirements(week: string, token: string) {
-  const response = await request(`/projections?week=${encodeURIComponent(week)}`, token)
+  const response = await request(`/projections?year=${operationalYear}&week=${encodeURIComponent(week)}`, token)
   const data = await response.json() as { requirements?: unknown[]; message?: string }
   if (!response.ok) throw new Error(data.message ?? 'Could not load projection mappings.')
   return data.requirements ?? []
+}
+
+export async function updateProductionStatus(year: number, week: string, area: string, recordId: string, status: string, version: number | undefined, token: string) {
+  const response = await request(`/production/${year}/${encodeURIComponent(week)}/${encodeURIComponent(area)}/${encodeURIComponent(recordId)}/status`, token, {
+    method: 'PATCH', body: JSON.stringify({ status, version }),
+  })
+  const data = await response.json() as { message?: string }
+  if (!response.ok) throw new Error(data.message ?? 'Could not update production status.')
+  return data
 }
 
 function request(path: string, token: string, init: RequestInit = {}) {

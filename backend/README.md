@@ -7,7 +7,9 @@ This folder contains Python application code that runs in AWS Lambda.
 - `lambda/src/import_processor.py` controls the S3 inbox → parsed records → DynamoDB → processed/failed workflow.
 - `lambda/src/upload_api.py` issues a five-minute, Cognito-protected direct S3 upload URL.
 
-The raw workbook is always retained in S3. Parsed operational fields are stored in DynamoDB; the entire workbook is never copied there. Each import uses an immutable `inbox/{type}/{import-id}/{file}` key so duplicate S3 notifications do not create a second import.
+The raw workbook is always retained in S3. Parsed operational fields are stored in DynamoDB; the entire workbook is never copied there. Each import uses an immutable `inbox/{type}/{year}/{import-id}/{file}` key so duplicate S3 notifications do not create a second import and the operational year is explicit.
+
+The upload request supplies `operationalYear`; Lambda never guesses the year from the system date. The detailed key model, re-import policy, and access patterns are in `dynamodb/DATA_MODEL.md`.
 
 ## Production Zip List intake
 
