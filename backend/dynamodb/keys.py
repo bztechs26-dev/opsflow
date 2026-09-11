@@ -108,6 +108,11 @@ def build_import_sk(document_type: str, area: str, import_id: str) -> str:
     return f"IMPORT#{normalize_area(document_type)}#{normalize_area(area)}#{normalize_record_id(import_id)}"
 
 
+def build_markets_sk() -> str:
+    """The single weekly business-summary item containing market maps."""
+    return "MARKETS"
+
+
 def stable_record_id(prefix: str, identity: dict[str, object]) -> str:
     """Return a deterministic opaque ID for a normalized source-row identity."""
     normalized_prefix = normalize_area(prefix)

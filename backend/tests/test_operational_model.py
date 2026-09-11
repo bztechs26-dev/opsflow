@@ -13,6 +13,7 @@ sys.path.insert(0, str(BACKEND))
 from dynamodb.keys import (
     OperationalContext,
     build_load_sk,
+    build_markets_sk,
     build_production_sk,
     build_projection_sk,
     build_week_pk,
@@ -111,6 +112,20 @@ class OperationalKeyTests(unittest.TestCase):
         repo._upsert_production(self.week_36, changed_source, "import-2", "inbox/corrected.xlsx")
         self.assertEqual(table.items[key]["status"], "COMPLETE")
         self.assertEqual(table.items[key]["volume"], 125)
+
+    def test_production_summary_is_one_markets_item_with_an_fe_map(self) -> None:
+        table = FakeTable()
+        repo = OperationalRepository(table=table)
+        records = [
+            {"sourceArea": "FE", "volume": 100},
+            {"sourceArea": "FE", "volume": 125},
+        ]
+        repo._upsert_market_summary(self.week_36, records, "import-1", "inbox/production/2026/import-1/Zip_List_FE_Wk_36.xlsx")
+        item = table.items[(build_week_pk(self.week_36), build_markets_sk())]
+        self.assertEqual(item["entityType"], "MARKETS")
+        self.assertEqual(item["FE"]["recordCount"], 2)
+        self.assertEqual(item["FE"]["totalQuantity"], 225)
+        self.assertEqual(item["BE"], {})
 
 
 if __name__ == "__main__":

@@ -16,6 +16,7 @@ from dynamodb.keys import (
     OperationalContext,
     build_import_lookup_pk,
     build_import_sk,
+    build_markets_sk,
     build_load_requirement_sk,
     build_load_sk,
     build_production_load_sk,
@@ -101,9 +102,12 @@ class OperationalRepository:
 
     def upsert_import_records(self, context: OperationalContext, document_type: str, parsed: dict[str, Any], import_id: str, source_key: str) -> int:
         if document_type == "production":
-            for record in parsed["records"]:
-                self._upsert_production(context, record, import_id, source_key)
             count = len(parsed["records"])
+            # This first experiment keeps the weekly production intake as one
+            # business summary item, rather than persisting every ZIP row.
+            self._upsert_market_summary(context, parsed["records"], import_id, source_key)
+            self._register_week(context)
+            return count
         elif document_type == "bulk-plan":
             for load in parsed["loads"]:
                 self._upsert_load(context, load, import_id, source_key)
@@ -117,6 +121,43 @@ class OperationalRepository:
         self._register_week(context)
         self.refresh_load_relationships(context)
         return count
+
+    def _upsert_market_summary(
+        self, context: OperationalContext, records: list[dict[str, Any]], import_id: str, source_key: str,
+    ) -> None:
+        if not records:
+            raise ValueError("A production summary requires at least one ZIP record.")
+        area = normalize_area(records[0]["sourceArea"])
+        key = {"pk": build_week_pk(context), "sk": build_markets_sk()}
+        existing = self._table.get_item(Key=key).get("Item") or {}
+        now = utc_now()
+        market_summary = {
+            "fileName": source_key.rsplit("/", 1)[-1],
+            "sourceKey": source_key,
+            "importId": import_id,
+            "recordCount": len(records),
+            "totalQuantity": sum(int(record.get("volume") or 0) for record in records),
+            "processingStatus": "PROCESSED",
+            "processedAt": now,
+        }
+        item = {
+            **existing,
+            **key,
+            "entityType": "MARKETS",
+            "organizationId": context.organization_id,
+            "year": context.year,
+            "week": context.week,
+            "createdAt": existing.get("createdAt", now),
+            "updatedAt": now,
+            "FE": existing.get("FE", {}),
+            "BE": existing.get("BE", {}),
+            "MMSI": existing.get("MMSI", {}),
+            "PROV_BOST": existing.get("PROV_BOST", {}),
+            "BULK_PLAN": existing.get("BULK_PLAN", {}),
+            "ZIPS_TRIPS": existing.get("ZIPS_TRIPS", {}),
+            area: market_summary,
+        }
+        self._table.put_item(Item=_dynamo_values(item))
 
     def _upsert_production(self, context: OperationalContext, record: dict[str, Any], import_id: str, source_key: str) -> None:
         record_id = normalize_record_id(record["recordId"])
