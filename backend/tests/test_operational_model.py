@@ -13,6 +13,7 @@ sys.path.insert(0, str(BACKEND))
 from dynamodb.keys import (
     OperationalContext,
     build_load_sk,
+    build_markets_pk,
     build_markets_sk,
     build_production_sk,
     build_projection_sk,
@@ -121,11 +122,13 @@ class OperationalKeyTests(unittest.TestCase):
             {"sourceArea": "FE", "volume": 125},
         ]
         repo._upsert_market_summary(self.week_36, records, "import-1", "inbox/production/2026/import-1/Zip_List_FE_Wk_36.xlsx")
-        item = table.items[(build_week_pk(self.week_36), build_markets_sk())]
-        self.assertEqual(item["entityType"], "MARKETS")
+        item = table.items[(build_markets_pk(self.week_36), build_markets_sk())]
+        self.assertEqual(item["pk"], "2026-36")
+        self.assertEqual(item["status"], "PROCESSED")
         self.assertEqual(item["FE"]["recordCount"], 2)
         self.assertEqual(item["FE"]["totalQuantity"], 225)
         self.assertEqual(item["BE"], {})
+        self.assertFalse({"createdAt", "entityType", "organizationId", "updatedAt", "year", "week"} & item.keys())
 
 
 if __name__ == "__main__":

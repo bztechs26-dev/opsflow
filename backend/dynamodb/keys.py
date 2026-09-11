@@ -75,6 +75,11 @@ def build_week_pk(context: OperationalContext) -> str:
     return f"ORG#{context.organization_id}#YEAR#{context.year}#WEEK#{context.week:02d}"
 
 
+def build_markets_pk(context: OperationalContext) -> str:
+    """Compact business key for the one weekly MARKETS summary item."""
+    return f"{context.year}-{context.week:02d}"
+
+
 def build_year_control_pk(organization_id: str, year: int | str) -> str:
     return f"ORG#{normalize_organization_id(organization_id)}#YEAR#{validate_year(year)}#CONTROL"
 

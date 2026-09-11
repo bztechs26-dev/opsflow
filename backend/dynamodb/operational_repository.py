@@ -16,6 +16,7 @@ from dynamodb.keys import (
     OperationalContext,
     build_import_lookup_pk,
     build_import_sk,
+    build_markets_pk,
     build_markets_sk,
     build_load_requirement_sk,
     build_load_sk,
@@ -128,7 +129,7 @@ class OperationalRepository:
         if not records:
             raise ValueError("A production summary requires at least one ZIP record.")
         area = normalize_area(records[0]["sourceArea"])
-        key = {"pk": build_week_pk(context), "sk": build_markets_sk()}
+        key = {"pk": build_markets_pk(context), "sk": build_markets_sk()}
         existing = self._table.get_item(Key=key).get("Item") or {}
         now = utc_now()
         market_summary = {
@@ -140,15 +141,11 @@ class OperationalRepository:
             "processingStatus": "PROCESSED",
             "processedAt": now,
         }
+        # Replace the summary item with only business-facing fields. Upload
+        # tracking remains in its separate internal items.
         item = {
-            **existing,
             **key,
-            "entityType": "MARKETS",
-            "organizationId": context.organization_id,
-            "year": context.year,
-            "week": context.week,
-            "createdAt": existing.get("createdAt", now),
-            "updatedAt": now,
+            "status": "PROCESSED",
             "FE": existing.get("FE", {}),
             "BE": existing.get("BE", {}),
             "MMSI": existing.get("MMSI", {}),
