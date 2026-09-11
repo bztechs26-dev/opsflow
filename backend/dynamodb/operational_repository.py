@@ -204,11 +204,16 @@ class OperationalRepository:
         return [value.removeprefix(prefix) for value in item.get("weeks", []) if value.startswith(prefix)]
 
     def week_data(self, context: OperationalContext) -> dict[str, Any]:
+        # Production is stored compactly: one item per market area and its ZIP
+        # lists are nested below machine names.  The browser, however, needs a
+        # normal list of ZIP records to filter, search, and render.  Flattening
+        # happens only in this API read model; it does not create child items.
+        market_items = self._query_partition(build_markets_pk(context))
         items = self._query_partition(build_week_pk(context))
         return {
             "id": str(context.week), "label": f"Week {context.week}", "organizationId": context.organization_id,
             "year": context.year, "week": context.week,
-            "productionRecords": [item for item in items if item.get("entityType") == "PRODUCTION"],
+            "productionRecords": _flatten_market_records(market_items, context),
             "loads": [item for item in items if item.get("entityType") == "LOAD"],
             "queuePlan": None,
             "projectionRequirements": [item for item in items if item.get("entityType") == "PROJECTION"],
@@ -216,21 +221,28 @@ class OperationalRepository:
 
     def update_production_status(self, context: OperationalContext, area: str, record_id: str, status: str, updated_by: str, expected_version: int | None = None) -> dict[str, Any]:
         area = normalize_area(area)
-        record_id = normalize_record_id(record_id)
-        values: dict[str, Any] = {":status": status, ":updated_at": utc_now(), ":updated_by": updated_by, ":entity": "PRODUCTION", ":record_id": record_id}
-        condition = "attribute_exists(pk) AND attribute_exists(sk) AND entityType = :entity AND recordId = :record_id"
-        if expected_version is not None:
-            condition += " AND version = :expected_version"
-            values[":expected_version"] = expected_version
-            values[":next_version"] = expected_version + 1
-        else:
-            values[":next_version"] = 2
-        return self._table.update_item(
-            Key={"pk": build_week_pk(context), "sk": build_production_sk(area, record_id)},
-            UpdateExpression="SET #status = :status, updatedAt = :updated_at, updatedBy = :updated_by, version = :next_version",
-            ConditionExpression=condition,
-            ExpressionAttributeNames={"#status": "status"}, ExpressionAttributeValues=values, ReturnValues="ALL_NEW",
+        machine, zip_value = _market_record_identity(record_id)
+        key = {"pk": build_markets_pk(context), "sk": build_market_sk(area)}
+        item = self._table.get_item(Key=key).get("Item")
+        if not item:
+            raise ValueError("The production market was not found.")
+        rows = item.get(machine)
+        if not isinstance(rows, list):
+            raise ValueError("The production machine was not found.")
+        row_index = next((index for index, row in enumerate(rows) if str(row.get("zip")) == zip_value), None)
+        if row_index is None:
+            raise ValueError("The production ZIP was not found.")
+        # Update just the nested status field.  The conditional ZIP check makes
+        # sure a stale list position cannot update a different ZIP.
+        updated = self._table.update_item(
+            Key=key,
+            UpdateExpression="SET #machine[#row].#status = :status",
+            ConditionExpression="attribute_exists(pk) AND #machine[#row].#zip = :zip",
+            ExpressionAttributeNames={"#machine": machine, "#status": "status", "#zip": "zip"},
+            ExpressionAttributeValues={":status": status, ":zip": zip_value},
+            ReturnValues="ALL_NEW",
         )["Attributes"]
+        return {"status": updated[machine][row_index]["status"]}
 
     def refresh_load_relationships(self, context: OperationalContext) -> None:
         """Rebuild derived LOADREQ/PRODLOAD adjacency only; never source/user records."""
@@ -289,6 +301,53 @@ def _machine_zip_statuses(item: dict[str, Any]) -> dict[tuple[str, str], Any]:
             if isinstance(row, dict) and "zip" in row:
                 statuses[(machine, str(row["zip"]))] = row.get("status")
     return statuses
+
+
+def _flatten_market_records(items: list[dict[str, Any]], context: OperationalContext) -> list[dict[str, Any]]:
+    """Convert compact market items into the API's ZIP-level read model."""
+    records: list[dict[str, Any]] = []
+    queue_order = 0
+    for item in sorted(items, key=lambda value: str(value.get("sk", ""))):
+        sk = str(item.get("sk", ""))
+        if not sk.startswith("MARKET-"):
+            continue
+        area = sk.removeprefix("MARKET-")
+        for machine in sorted(key for key, value in item.items() if key not in {"pk", "sk"} and isinstance(value, list)):
+            rows = item[machine]
+            for row in rows:
+                if not isinstance(row, dict) or not row.get("zip"):
+                    continue
+                zip_value = str(row["zip"])
+                records.append({
+                    "id": f"{area}~{machine}~{zip_value}",
+                    # This compact identity identifies the nested ZIP field for
+                    # the status PATCH route; it is not a DynamoDB child key.
+                    "recordId": f"{machine}~{zip_value}",
+                    "sourceArea": area,
+                    "week": str(context.week),
+                    "market": str(row.get("market") or area),
+                    "jobNumber": str(row.get("job") or "") or None,
+                    "machine": machine,
+                    "scheduledMachine": machine,
+                    "zip": zip_value,
+                    # Null in DynamoDB means the clerk has not chosen a status.
+                    # The UI renders that as NOT_STARTED without writing it back.
+                    "status": str(row.get("status") or "NOT_STARTED"),
+                    "sourceStatus": "Blank",
+                    "volume": int(row.get("qty") or 0),
+                    "ir": str(row.get("ir") or ""),
+                    "queueOrder": queue_order,
+                })
+                queue_order += 1
+    return records
+
+
+def _market_record_identity(record_id: str) -> tuple[str, str]:
+    """Decode the API record identity ``machine~zip`` safely."""
+    machine, separator, zip_value = str(record_id).partition("~")
+    if not separator or not machine.strip() or not zip_value.strip():
+        raise ValueError("recordId must identify a machine and ZIP.")
+    return machine, zip_value
 
 
 def _dynamo_values(value: Any) -> Any:

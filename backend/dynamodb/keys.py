@@ -120,7 +120,7 @@ def build_import_sk(document_type: str, area: str, import_id: str) -> str:
 
 def build_market_sk(area: str) -> str:
     """Sort key for one operational area within a weekly partition."""
-    return f"MARKETS#{normalize_area(area)}"
+    return f"MARKET-{normalize_area(area)}"
 
 
 def stable_record_id(prefix: str, identity: dict[str, object]) -> str:

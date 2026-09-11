@@ -21,7 +21,7 @@ from dynamodb.keys import (
     build_week_pk,
     production_record_id,
 )
-from dynamodb.operational_repository import OperationalRepository
+from dynamodb.operational_repository import OperationalRepository, _flatten_market_records
 
 
 class FakeTable:
@@ -44,7 +44,12 @@ class FakeTable:
         if item is None:
             raise ConditionalFailure()
         values = kwargs["ExpressionAttributeValues"]
-        item.update({"status": values[":status"], "version": values[":next_version"], "updatedBy": values[":updated_by"]})
+        names = kwargs.get("ExpressionAttributeNames", {})
+        machine = names.get("#machine")
+        if machine:
+            item[machine][0]["status"] = values[":status"]
+        else:
+            item.update({"status": values[":status"]})
         self.items[(key["pk"], key["sk"])] = item
         return {"Attributes": item}
 
@@ -84,19 +89,18 @@ class OperationalKeyTests(unittest.TestCase):
     def test_status_update_targets_only_exact_week_and_record(self) -> None:
         table = FakeTable()
         repo = OperationalRepository(table=table)
-        record_id = "PR-EXACT"
-        key = {"pk": build_week_pk(self.week_36), "sk": build_production_sk("FE", record_id)}
-        table.put_item(Item={**key, "entityType": "PRODUCTION", "recordId": record_id, "status": "NOT_STARTED", "version": 1})
-        repo.update_production_status(self.week_36, "FE", record_id, "COMPLETE", "user-1", 1)
-        self.assertEqual(table.items[(key["pk"], key["sk"])]["status"], "COMPLETE")
+        key = {"pk": build_markets_pk(self.week_36), "sk": build_market_sk("FE")}
+        table.put_item(Item={**key, "A01": [{"zip": "07045", "status": None}]})
+        repo.update_production_status(self.week_36, "FE", "A01~07045", "COMPLETE", "user-1", 1)
+        self.assertEqual(table.items[(key["pk"], key["sk"])]["A01"][0]["status"], "COMPLETE")
         self.assertIn("attribute_exists(pk)", table.last_update["ConditionExpression"])
-        self.assertIn("recordId = :record_id", table.last_update["ConditionExpression"])
+        self.assertIn("#machine[#row].#zip", table.last_update["ConditionExpression"])
 
     def test_missing_status_update_cannot_create_a_record(self) -> None:
         table = FakeTable()
         repo = OperationalRepository(table=table)
-        with self.assertRaises(ConditionalFailure):
-            repo.update_production_status(self.week_36, "FE", "PR-MISSING", "COMPLETE", "user-1", 1)
+        with self.assertRaises(ValueError):
+            repo.update_production_status(self.week_36, "FE", "A01~07045", "COMPLETE", "user-1", 1)
         self.assertEqual(table.items, {})
 
     def test_reimport_preserves_user_status(self) -> None:
@@ -126,7 +130,7 @@ class OperationalKeyTests(unittest.TestCase):
         repo._upsert_market_area(self.week_36, records)
         item = table.items[(build_markets_pk(self.week_36), build_market_sk("FE"))]
         self.assertEqual(item["pk"], "2026-36")
-        self.assertEqual(item["sk"], "MARKETS#FE")
+        self.assertEqual(item["sk"], "MARKET-FE")
         self.assertEqual([row["zip"] for row in item["A01"]], ["07960 F1", "07960 B1"])
         self.assertEqual(item["A02"][0]["qty"], 50)
         self.assertIsNone(item["A01"][0]["status"])
@@ -142,6 +146,16 @@ class OperationalKeyTests(unittest.TestCase):
         updated = table.items[(build_markets_pk(self.week_36), build_market_sk("FE"))]
         self.assertEqual(updated["A01"][0]["status"], "COMPLETE")
         self.assertEqual(updated["A01"][0]["qty"], 125)
+
+    def test_compact_market_item_flattens_only_for_the_api_response(self) -> None:
+        records = _flatten_market_records([{
+            "pk": "2026-36", "sk": "MARKET-FE",
+            "A01": [{"zip": "07045", "qty": 3959, "ir": "6:1", "job": "1081908", "market": "NNJ NSL", "status": None}],
+        }], self.week_36)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["recordId"], "A01~07045")
+        self.assertEqual(records[0]["sourceArea"], "FE")
+        self.assertEqual(records[0]["status"], "NOT_STARTED")
 
     def test_week_control_is_one_compact_item(self) -> None:
         table = FakeTable()
