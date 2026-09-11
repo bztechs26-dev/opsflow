@@ -47,7 +47,8 @@ class FakeTable:
         names = kwargs.get("ExpressionAttributeNames", {})
         machine = names.get("#machine")
         if machine:
-            item[machine][0]["status"] = values[":status"]
+            row_index = int(kwargs["UpdateExpression"].split("[")[1].split("]")[0])
+            item[machine][row_index]["status"] = values[":status"]
         else:
             item.update({"status": values[":status"]})
         self.items[(key["pk"], key["sk"])] = item
@@ -90,11 +91,12 @@ class OperationalKeyTests(unittest.TestCase):
         table = FakeTable()
         repo = OperationalRepository(table=table)
         key = {"pk": build_markets_pk(self.week_36), "sk": build_market_sk("FE")}
-        table.put_item(Item={**key, "A01": [{"zip": "07045", "status": None}]})
+        table.put_item(Item={**key, "A01": [{"zip": "07044", "status": None}, {"zip": "07045", "status": None}]})
         repo.update_production_status(self.week_36, "FE", "A01~07045", "COMPLETE", "user-1", 1)
-        self.assertEqual(table.items[(key["pk"], key["sk"])]["A01"][0]["status"], "COMPLETE")
+        self.assertEqual(table.items[(key["pk"], key["sk"])]["A01"][0]["status"], None)
+        self.assertEqual(table.items[(key["pk"], key["sk"])]["A01"][1]["status"], "COMPLETE")
         self.assertIn("attribute_exists(pk)", table.last_update["ConditionExpression"])
-        self.assertIn("#machine[#row].#zip", table.last_update["ConditionExpression"])
+        self.assertIn("#machine[1].#zip", table.last_update["ConditionExpression"])
 
     def test_missing_status_update_cannot_create_a_record(self) -> None:
         table = FakeTable()

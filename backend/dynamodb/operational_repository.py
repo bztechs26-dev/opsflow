@@ -236,8 +236,10 @@ class OperationalRepository:
         # sure a stale list position cannot update a different ZIP.
         updated = self._table.update_item(
             Key=key,
-            UpdateExpression="SET #machine[#row].#status = :status",
-            ConditionExpression="attribute_exists(pk) AND #machine[#row].#zip = :zip",
+            # DynamoDB requires a literal list index; expression placeholders
+            # are valid for attribute names and values, not ``[index]``.
+            UpdateExpression=f"SET #machine[{row_index}].#status = :status",
+            ConditionExpression=f"attribute_exists(pk) AND #machine[{row_index}].#zip = :zip",
             ExpressionAttributeNames={"#machine": machine, "#status": "status", "#zip": "zip"},
             ExpressionAttributeValues={":status": status, ":zip": zip_value},
             ReturnValues="ALL_NEW",
