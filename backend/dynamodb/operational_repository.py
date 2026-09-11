@@ -24,6 +24,7 @@ from dynamodb.keys import (
     build_production_sk,
     build_projection_sk,
     build_week_pk,
+    build_weeks_control_key,
     build_year_control_pk,
     normalize_area,
     normalize_record_id,
@@ -190,15 +191,17 @@ class OperationalRepository:
         }))
 
     def _register_week(self, context: OperationalContext) -> None:
-        self._table.put_item(Item={
-            "pk": build_year_control_pk(context.organization_id, context.year), "sk": f"WEEK#{context.week:02d}",
-            "entityType": "WEEK", "organizationId": context.organization_id, "year": context.year,
-            "week": context.week, "updatedAt": utc_now(),
-        })
+        pk, sk = build_weeks_control_key()
+        current = self._table.get_item(Key={"pk": pk, "sk": sk}).get("Item") or {}
+        week_key = f"{context.year}-{context.week:02d}"
+        weeks = sorted({str(value) for value in current.get("weeks", [])} | {week_key})
+        self._table.put_item(Item={"pk": pk, "sk": sk, "weeks": weeks})
 
     def list_weeks(self, organization_id: str, year: int) -> list[str]:
-        items = self._query_partition(build_year_control_pk(organization_id, year))
-        return [str(item["week"]) for item in sorted(items, key=lambda item: int(item["week"]))]
+        pk, sk = build_weeks_control_key()
+        item = self._table.get_item(Key={"pk": pk, "sk": sk}).get("Item") or {}
+        prefix = f"{year}-"
+        return [value.removeprefix(prefix) for value in item.get("weeks", []) if value.startswith(prefix)]
 
     def week_data(self, context: OperationalContext) -> dict[str, Any]:
         items = self._query_partition(build_week_pk(context))

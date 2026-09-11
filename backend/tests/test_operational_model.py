@@ -15,6 +15,7 @@ from dynamodb.keys import (
     build_load_sk,
     build_market_sk,
     build_markets_pk,
+    build_weeks_control_key,
     build_production_sk,
     build_projection_sk,
     build_week_pk,
@@ -141,6 +142,14 @@ class OperationalKeyTests(unittest.TestCase):
         updated = table.items[(build_markets_pk(self.week_36), build_market_sk("FE"))]
         self.assertEqual(updated["A01"][0]["status"], "COMPLETE")
         self.assertEqual(updated["A01"][0]["qty"], 125)
+
+    def test_week_control_is_one_compact_item(self) -> None:
+        table = FakeTable()
+        repo = OperationalRepository(table=table)
+        repo._register_week(self.week_36)
+        repo._register_week(OperationalContext("opsflow-dev", 2026, 39))
+        key = build_weeks_control_key()
+        self.assertEqual(table.items[key], {"pk": "CONTROL", "sk": "WEEKS", "weeks": ["2026-36", "2026-39"]})
 
 
 if __name__ == "__main__":

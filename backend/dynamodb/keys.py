@@ -80,6 +80,11 @@ def build_markets_pk(context: OperationalContext) -> str:
     return f"{context.year}-{context.week:02d}"
 
 
+def build_weeks_control_key() -> tuple[str, str]:
+    """The sole compact item used to populate the operational-week selector."""
+    return "CONTROL", "WEEKS"
+
+
 def build_year_control_pk(organization_id: str, year: int | str) -> str:
     return f"ORG#{normalize_organization_id(organization_id)}#YEAR#{validate_year(year)}#CONTROL"
 

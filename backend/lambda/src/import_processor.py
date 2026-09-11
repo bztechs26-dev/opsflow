@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import os
 from typing import Any
 from urllib.parse import unquote_plus
@@ -41,22 +40,14 @@ def _process_one(bucket: str, key: str) -> None:
     context = OperationalContext(os.environ["DEFAULT_ORGANIZATION_ID"], year, week)
     area = _import_area(document_type, file_name)
     repository = OperationalRepository()
-    existing = repository.import_metadata(context, document_type, area, import_id)
-    if existing and existing.get("status") in {"PROCESSED", "FAILED"}:
-        log_event("inbox-upload-duplicate-event-ignored", importId=import_id, key=key, status=existing["status"])
-        return
     s3 = boto3.client("s3")
     try:
         source = s3.get_object(Bucket=bucket, Key=key)
         contents = source["Body"].read()
-        checksum = hashlib.sha256(contents).hexdigest()
-        if not repository.begin_import(context, document_type, area, import_id, checksum):
-            return
         parsed = _parse(document_type, contents, str(week), file_name)
         count = repository.upsert_import_records(context, document_type, parsed, import_id, key)
         processed_key = f"{os.environ['PROCESSED_PREFIX']}{document_type}/year-{year}/week-{week:02d}/{file_name}"
         _move_object(s3, bucket, key, processed_key)
-        repository.complete_import(context, document_type, area, import_id, processed_key, count)
         log_event(
             "inbox-upload-processed",
             importId=import_id,
@@ -72,7 +63,6 @@ def _process_one(bucket: str, key: str) -> None:
         except Exception as move_error:
             log_event("inbox-upload-failed-file-move", importId=import_id, key=key, error=str(move_error))
             failed_key = None
-        repository.fail_import(context, document_type, area, import_id, str(error), failed_key)
         log_event("inbox-upload-failed", importId=import_id, documentType=document_type, key=key, error=str(error))
         raise
 

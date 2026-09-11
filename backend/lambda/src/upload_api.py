@@ -13,7 +13,6 @@ import boto3
 
 from parsers.common import mapping_area_from_filename, source_area_from_filename, week_from_filename
 from dynamodb.keys import OperationalContext, validate_year
-from dynamodb.operational_repository import OperationalRepository
 
 
 DOCUMENT_TYPES = {"production", "bulk-plan", "projection"}
@@ -41,7 +40,6 @@ def create_upload_url(event: dict[str, Any]) -> dict[str, Any]:
         import_id = str(uuid4())
         safe_name = SAFE_FILENAME.sub("_", file_name)
         object_key = f"inbox/{document_type}/{context.year}/{import_id}/{safe_name}"
-        OperationalRepository().create_pending_import(context, document_type, area, import_id, safe_name, object_key)
         upload_url = boto3.client("s3").generate_presigned_url(
             "put_object",
             Params={

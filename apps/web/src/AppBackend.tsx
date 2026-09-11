@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { clearSession, fetchImportStatus, fetchWeek, fetchWeeks, loadSession, operationalYear, type Session, updateProductionStatus as updateProductionStatusApi, uploadWorkbook } from './api/opsflow'
+import { clearSession, fetchWeek, fetchWeeks, loadSession, operationalYear, type Session, updateProductionStatus as updateProductionStatusApi, uploadWorkbook } from './api/opsflow'
 import { AppShell } from './components/AppShell'
 import { SignIn } from './components/SignIn'
 import { DashboardPage } from './pages/DashboardPage'
@@ -57,19 +57,14 @@ function OperationsApp({ session, onSignOut }: { session: Session; onSignOut: ()
     if (!file) return setMessage(`Select a ${uploadDomain === 'production' ? 'Production QA' : 'Bulk Plan'} workbook.`)
     setIsUploading(true); setMessage('')
     try {
-      const importId = await uploadWorkbook(uploadDomain, file, session.idToken)
+      await uploadWorkbook(uploadDomain, file, session.idToken)
       setIsUploadOpen(false)
       setIsProcessing(true)
-      for (let attempt = 0; attempt < 20; attempt += 1) {
+      for (let attempt = 0; attempt < 5; attempt += 1) {
         await delay(1500)
-        const status = await fetchImportStatus(importId, session.idToken)
-        if (status === 'PROCESSED') {
-          await refresh()
-          return
-        }
-        if (status === 'FAILED') throw new Error('We could not process that workbook. Please check the file and try again.')
+        await refresh()
       }
-      setMessage('Your workbook is taking a little longer than expected. Please refresh in a moment.')
+      setMessage('Upload accepted. The operational data is refreshing now.')
     } catch (error) { setMessage(error instanceof Error ? error.message : 'The workbook could not be uploaded.') }
     finally { setIsUploading(false); setIsProcessing(false) }
   }

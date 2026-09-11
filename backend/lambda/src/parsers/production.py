@@ -31,11 +31,11 @@ def parse_production(contents: bytes, week: str, file_name: str) -> dict[str, An
         source_area = requested_area
         area_records = []
         for row in workbook.rows(sheet_name):
-            # A Zip List's first Total row closes the requested area's block.
-            # Do not continue into a later section of the worksheet.
-            if text(_value(row, 0)).strip().lower() == "total:":
-                break
             if not row or not is_zip(_value(row, 0)) or number(_value(row, 1)) <= 0:
+                continue
+            machine = text(_value(row, 6)) or text(_value(row, 5)) or "Unassigned"
+            # H01 is source-workbook data that is outside the OpsFlow workflow.
+            if machine.strip().upper() == "H01":
                 continue
             zip_value = format_zip(_value(row, 0))
             market = text(_value(row, 4)) or source_area
@@ -60,7 +60,7 @@ def parse_production(contents: bytes, week: str, file_name: str) -> dict[str, An
                 "sourceArea": source_area,
                 "sourceSheet": sheet_name,
                 "jobNumber": job_number,
-                "machine": text(_value(row, 6)) or text(_value(row, 5)) or "Unassigned",
+                "machine": machine,
                 "scheduledMachine": text(_value(row, 5)) or None,
                 "zip": zip_value,
                 "status": _status(_value(row, 7)),
