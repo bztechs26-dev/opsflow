@@ -13,8 +13,8 @@ sys.path.insert(0, str(BACKEND))
 from dynamodb.keys import (
     OperationalContext,
     build_load_sk,
+    build_market_sk,
     build_markets_pk,
-    build_markets_sk,
     build_production_sk,
     build_projection_sk,
     build_week_pk,
@@ -114,21 +114,33 @@ class OperationalKeyTests(unittest.TestCase):
         self.assertEqual(table.items[key]["status"], "COMPLETE")
         self.assertEqual(table.items[key]["volume"], 125)
 
-    def test_production_summary_is_one_markets_item_with_an_fe_map(self) -> None:
+    def test_production_area_is_grouped_by_machine_in_one_item(self) -> None:
         table = FakeTable()
         repo = OperationalRepository(table=table)
         records = [
-            {"sourceArea": "FE", "volume": 100},
-            {"sourceArea": "FE", "volume": 125},
+            {"sourceArea": "FE", "machine": "A01", "zip": "07960 F1", "volume": 100, "ir": "6:1", "jobNumber": "1082234", "market": "NNJ NSL"},
+            {"sourceArea": "FE", "machine": "A01", "zip": "07960 B1", "volume": 125, "ir": "5:1", "jobNumber": "1082234", "market": "NNJ NSL"},
+            {"sourceArea": "FE", "machine": "A02", "zip": "08831 F1", "volume": 50, "ir": "2:1", "jobNumber": "1082235", "market": "NNJ NSL"},
         ]
-        repo._upsert_market_summary(self.week_36, records, "import-1", "inbox/production/2026/import-1/Zip_List_FE_Wk_36.xlsx")
-        item = table.items[(build_markets_pk(self.week_36), build_markets_sk())]
+        repo._upsert_market_area(self.week_36, records)
+        item = table.items[(build_markets_pk(self.week_36), build_market_sk("FE"))]
         self.assertEqual(item["pk"], "2026-36")
-        self.assertEqual(item["status"], "PROCESSED")
-        self.assertEqual(item["FE"]["recordCount"], 2)
-        self.assertEqual(item["FE"]["totalQuantity"], 225)
-        self.assertEqual(item["BE"], {})
-        self.assertFalse({"createdAt", "entityType", "organizationId", "updatedAt", "year", "week"} & item.keys())
+        self.assertEqual(item["sk"], "MARKETS#FE")
+        self.assertEqual([row["zip"] for row in item["A01"]], ["07960 F1", "07960 B1"])
+        self.assertEqual(item["A02"][0]["qty"], 50)
+        self.assertIsNone(item["A01"][0]["status"])
+
+    def test_reimport_preserves_machine_zip_status(self) -> None:
+        table = FakeTable()
+        repo = OperationalRepository(table=table)
+        records = [{"sourceArea": "FE", "machine": "A01", "zip": "07960 F1", "volume": 100, "ir": "6:1", "jobNumber": "1082234", "market": "NNJ NSL"}]
+        repo._upsert_market_area(self.week_36, records)
+        item = table.items[(build_markets_pk(self.week_36), build_market_sk("FE"))]
+        item["A01"][0]["status"] = "COMPLETE"
+        repo._upsert_market_area(self.week_36, [{**records[0], "volume": 125}])
+        updated = table.items[(build_markets_pk(self.week_36), build_market_sk("FE"))]
+        self.assertEqual(updated["A01"][0]["status"], "COMPLETE")
+        self.assertEqual(updated["A01"][0]["qty"], 125)
 
 
 if __name__ == "__main__":

@@ -16,8 +16,8 @@ from dynamodb.keys import (
     OperationalContext,
     build_import_lookup_pk,
     build_import_sk,
+    build_market_sk,
     build_markets_pk,
-    build_markets_sk,
     build_load_requirement_sk,
     build_load_sk,
     build_production_load_sk,
@@ -104,9 +104,7 @@ class OperationalRepository:
     def upsert_import_records(self, context: OperationalContext, document_type: str, parsed: dict[str, Any], import_id: str, source_key: str) -> int:
         if document_type == "production":
             count = len(parsed["records"])
-            # This first experiment keeps the weekly production intake as one
-            # business summary item, rather than persisting every ZIP row.
-            self._upsert_market_summary(context, parsed["records"], import_id, source_key)
+            self._upsert_market_area(context, parsed["records"])
             self._register_week(context)
             return count
         elif document_type == "bulk-plan":
@@ -123,37 +121,31 @@ class OperationalRepository:
         self.refresh_load_relationships(context)
         return count
 
-    def _upsert_market_summary(
-        self, context: OperationalContext, records: list[dict[str, Any]], import_id: str, source_key: str,
-    ) -> None:
+    def _upsert_market_area(self, context: OperationalContext, records: list[dict[str, Any]]) -> None:
+        """Store one production area as machine-keyed ZIP lists in its weekly item."""
         if not records:
-            raise ValueError("A production summary requires at least one ZIP record.")
+            raise ValueError("A production area requires at least one ZIP record.")
         area = normalize_area(records[0]["sourceArea"])
-        key = {"pk": build_markets_pk(context), "sk": build_markets_sk()}
+        key = {"pk": build_markets_pk(context), "sk": build_market_sk(area)}
         existing = self._table.get_item(Key=key).get("Item") or {}
-        now = utc_now()
-        market_summary = {
-            "fileName": source_key.rsplit("/", 1)[-1],
-            "sourceKey": source_key,
-            "importId": import_id,
-            "recordCount": len(records),
-            "totalQuantity": sum(int(record.get("volume") or 0) for record in records),
-            "processingStatus": "PROCESSED",
-            "processedAt": now,
-        }
-        # Replace the summary item with only business-facing fields. Upload
-        # tracking remains in its separate internal items.
-        item = {
-            **key,
-            "status": "PROCESSED",
-            "FE": existing.get("FE", {}),
-            "BE": existing.get("BE", {}),
-            "MMSI": existing.get("MMSI", {}),
-            "PROV_BOST": existing.get("PROV_BOST", {}),
-            "BULK_PLAN": existing.get("BULK_PLAN", {}),
-            "ZIPS_TRIPS": existing.get("ZIPS_TRIPS", {}),
-            area: market_summary,
-        }
+        previous_statuses = _machine_zip_statuses(existing)
+        item: dict[str, Any] = dict(key)
+        seen_zips: set[tuple[str, str]] = set()
+        for record in records:
+            machine = str(record.get("machine") or "Unassigned").strip() or "Unassigned"
+            zip_value = str(record["zip"])
+            identity = (machine, zip_value)
+            if identity in seen_zips:
+                raise ValueError(f"Duplicate ZIP '{zip_value}' found in machine '{machine}' for {area}.")
+            seen_zips.add(identity)
+            item.setdefault(machine, []).append({
+                "zip": zip_value,
+                "qty": int(record.get("volume") or 0),
+                "ir": str(record.get("ir") or ""),
+                "job": str(record.get("jobNumber") or ""),
+                "market": str(record.get("market") or ""),
+                "status": previous_statuses.get(identity),
+            })
         self._table.put_item(Item=_dynamo_values(item))
 
     def _upsert_production(self, context: OperationalContext, record: dict[str, Any], import_id: str, source_key: str) -> None:
@@ -282,6 +274,18 @@ def _same_requirement(production: dict[str, Any], projection: dict[str, Any]) ->
 
 def _normalize_atz(value: object) -> str:
     return "".join(character for character in str(value or "").upper() if character.isalnum())
+
+
+def _machine_zip_statuses(item: dict[str, Any]) -> dict[tuple[str, str], Any]:
+    """Read retained clerk statuses from a prior machine-keyed area item."""
+    statuses: dict[tuple[str, str], Any] = {}
+    for machine, rows in item.items():
+        if machine in {"pk", "sk"} or not isinstance(rows, list):
+            continue
+        for row in rows:
+            if isinstance(row, dict) and "zip" in row:
+                statuses[(machine, str(row["zip"]))] = row.get("status")
+    return statuses
 
 
 def _dynamo_values(value: Any) -> Any:

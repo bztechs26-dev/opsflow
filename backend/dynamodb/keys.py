@@ -113,9 +113,9 @@ def build_import_sk(document_type: str, area: str, import_id: str) -> str:
     return f"IMPORT#{normalize_area(document_type)}#{normalize_area(area)}#{normalize_record_id(import_id)}"
 
 
-def build_markets_sk() -> str:
-    """The single weekly business-summary item containing market maps."""
-    return "MARKETS"
+def build_market_sk(area: str) -> str:
+    """Sort key for one operational area within a weekly partition."""
+    return f"MARKETS#{normalize_area(area)}"
 
 
 def stable_record_id(prefix: str, identity: dict[str, object]) -> str:
