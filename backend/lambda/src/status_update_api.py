@@ -19,7 +19,6 @@ def update_production_status(event: dict[str, Any]) -> dict[str, Any]:
         path = event.get("pathParameters") or {}
         context = OperationalContext(os.environ["DEFAULT_ORGANIZATION_ID"], path.get("year"), path.get("week"))
         area = str(path.get("area", ""))
-        record_id = str(path.get("recordId", ""))
         body = _json_body(event)
         status = str(body.get("status", "")).upper()
         if status not in ALLOWED_STATUSES:
@@ -31,7 +30,13 @@ def update_production_status(event: dict[str, Any]) -> dict[str, Any]:
                 raise ValueError("version must be a positive integer.")
         claims = ((event.get("requestContext") or {}).get("authorizer") or {}).get("claims") or {}
         updated_by = str(claims.get("sub") or claims.get("email") or "authenticated-user")
-        item = OperationalRepository().update_production_status(context, area, record_id, status, updated_by, expected_version)
+        # Machine and ZIP are request data, not URL path data: ZIP/ATZ values
+        # commonly contain spaces and suffixes such as "07054 F1".
+        machine = str(body.get("machine", ""))
+        zip_value = str(body.get("zip", ""))
+        item = OperationalRepository().update_production_status(
+            context, area, f"{machine}~{zip_value}", status, updated_by, expected_version,
+        )
         return _response(200, item)
     except (TypeError, ValueError) as error:
         return _response(400, {"message": str(error)})

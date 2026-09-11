@@ -65,9 +65,9 @@ export async function fetchProjectionRequirements(week: string, token: string) {
   return data.requirements ?? []
 }
 
-export async function updateProductionStatus(year: number, week: string, area: string, recordId: string, status: string, version: number | undefined, token: string) {
-  const response = await request(`/production/${year}/${encodeURIComponent(week)}/${encodeURIComponent(area)}/${encodeURIComponent(recordId)}/status`, token, {
-    method: 'PATCH', body: JSON.stringify({ status, version }),
+export async function updateProductionStatus(year: number, week: string, area: string, routeId: string, machine: string, zip: string, status: string, version: number | undefined, token: string) {
+  const response = await request(`/production/${year}/${encodeURIComponent(week)}/${encodeURIComponent(area)}/${encodeURIComponent(routeId)}/status`, token, {
+    method: 'PATCH', body: JSON.stringify({ status, machine, zip, version }),
   })
   const data = await response.json() as { message?: string }
   if (!response.ok) throw new Error(data.message ?? 'Could not update production status.')

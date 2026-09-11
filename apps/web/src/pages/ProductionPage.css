@@ -18,6 +18,16 @@
   font-size: 13px;
 }
 
+.status-save-message {
+  display: block;
+  margin-top: 4px;
+  color: #667085;
+  font-size: 11px;
+}
+
+.status-save-message.saved { color: #20704c; }
+.status-save-message.failed { color: #b42318; }
+
 @media (max-width: 960px) {
   .production-summary { flex-wrap: wrap; }
   .production-sticky .production-search { order: 2; flex: 1 1 260px; }

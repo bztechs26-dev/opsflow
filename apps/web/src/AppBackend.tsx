@@ -71,18 +71,22 @@ function OperationsApp({ session, onSignOut }: { session: Session; onSignOut: ()
 
   const updateProductionStatus = async (id: string, status: ProductionStatus) => {
     const record = week?.productionRecords.find((item) => item.id === id)
-    if (!record?.sourceArea || !(record.recordId ?? record.id)) {
+    if (!record?.sourceArea) {
       setMessage('This production record is missing its operational identity. Refresh and try again.')
       return
     }
     try {
       const updated = await updateProductionStatusApi(
-        week?.year ?? operationalYear, weekId, record.sourceArea, record.recordId ?? record.id, status, record.version, session.idToken,
+        week?.year ?? operationalYear, weekId, record.sourceArea, `record-${record.queueOrder}`, record.machine, record.zip, status, record.version, session.idToken,
       ) as { status: ProductionStatus; version?: number }
       setWeeks((items) => items.map((item) => item.id === weekId ? {
         ...item, productionRecords: item.productionRecords.map((current) => current.id === id ? { ...current, status: updated.status, version: updated.version ?? current.version } : current),
       } : item))
-    } catch (error) { setMessage(error instanceof Error ? error.message : 'Could not update production status.') }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not update production status.'
+      setMessage(message)
+      throw error
+    }
   }
 
   const content = page === 'projection'
@@ -90,7 +94,7 @@ function OperationsApp({ session, onSignOut }: { session: Session; onSignOut: ()
     : !week
       ? <section className="panel empty-page"><h2>No operational weeks loaded</h2><p>Upload a Production QA workbook or Bulk Plan to add an operational week.</p></section>
       : page === 'production'
-        ? <ProductionPage records={week.productionRecords} queuePlan={week.queuePlan} onStatusChange={(id, status) => void updateProductionStatus(id, status)} onNotesChange={() => undefined} onQueuePlanChange={() => undefined} />
+        ? <ProductionPage records={week.productionRecords} queuePlan={week.queuePlan} onStatusChange={updateProductionStatus} onNotesChange={() => undefined} onQueuePlanChange={() => undefined} />
         : page === 'shipping'
           ? <ShippingPage key={`${week.id}-${week.loads.length}`} loads={week.loads} />
           : <DashboardPage productionMetrics={metrics} loads={week.loads} records={week.productionRecords} />
