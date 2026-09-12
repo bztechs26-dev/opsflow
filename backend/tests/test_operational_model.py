@@ -13,6 +13,7 @@ sys.path.insert(0, str(BACKEND))
 from dynamodb.keys import (
     OperationalContext,
     build_load_sk,
+    build_bulk_plan_sk,
     build_market_sk,
     build_markets_pk,
     build_weeks_control_key,
@@ -21,7 +22,7 @@ from dynamodb.keys import (
     build_week_pk,
     production_record_id,
 )
-from dynamodb.operational_repository import OperationalRepository, _flatten_market_records, _market_loads
+from dynamodb.operational_repository import OperationalRepository, _bulk_plan_loads, _flatten_market_records
 
 
 class FakeTable:
@@ -159,18 +160,20 @@ class OperationalKeyTests(unittest.TestCase):
         self.assertEqual(records[0]["sourceArea"], "FE")
         self.assertEqual(records[0]["status"], "NOT_STARTED")
 
-    def test_bulk_plan_shares_its_market_item(self) -> None:
+    def test_bulk_plan_is_independent_from_production_markets(self) -> None:
         table = FakeTable()
         repo = OperationalRepository(table=table)
         repo._upsert_market_area(self.week_36, [{
             "sourceArea": "FE", "machine": "A01", "zip": "07045", "volume": 100,
             "ir": "6:1", "jobNumber": "1081908", "market": "NNJ NSL",
         }])
-        repo._upsert_market_bulk_plan(self.week_36, [{"id": "36-load-100", "number": "100", "area": "FRONT_END"}])
-        item = table.items[("2026-36", "MARKET-FE")]
-        self.assertEqual(item["A01"][0]["zip"], "07045")
-        self.assertEqual(item["bulkPlan"][0]["number"], "100")
-        self.assertEqual(_market_loads([item])[0]["number"], "100")
+        repo._upsert_bulk_plan(self.week_36, [{"id": "36-load-100", "number": "100", "area": "FRONT_END"}])
+        production = table.items[("2026-36", "MARKET-FE")]
+        bulk_plan = table.items[("2026-36", build_bulk_plan_sk())]
+        self.assertEqual(production["A01"][0]["zip"], "07045")
+        self.assertNotIn("loads", production)
+        self.assertEqual(bulk_plan["loads"][0]["number"], "100")
+        self.assertEqual(_bulk_plan_loads([production, bulk_plan])[0]["number"], "100")
 
     def test_week_control_is_one_compact_item(self) -> None:
         table = FakeTable()

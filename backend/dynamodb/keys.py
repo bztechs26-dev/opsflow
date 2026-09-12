@@ -123,6 +123,11 @@ def build_market_sk(area: str) -> str:
     return f"MARKET-{normalize_area(area)}"
 
 
+def build_bulk_plan_sk() -> str:
+    """The one independent Shipping Bulk Plan item for an operational week."""
+    return "BULK-PLAN"
+
+
 def stable_record_id(prefix: str, identity: dict[str, object]) -> str:
     """Return a deterministic opaque ID for a normalized source-row identity."""
     normalized_prefix = normalize_area(prefix)

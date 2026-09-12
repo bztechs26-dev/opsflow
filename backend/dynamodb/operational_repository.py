@@ -17,6 +17,7 @@ from dynamodb.keys import (
     OperationalContext,
     build_import_lookup_pk,
     build_import_sk,
+    build_bulk_plan_sk,
     build_market_sk,
     build_markets_pk,
     build_load_requirement_sk,
@@ -36,7 +37,7 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-_MARKET_METADATA_FIELDS = {"pk", "sk", "bulkPlan"}
+_MARKET_METADATA_FIELDS = {"pk", "sk"}
 # Keep a margin below DynamoDB's 400 KB hard item limit because DynamoDB also
 # counts attribute names and type metadata, not only the JSON source values.
 _MAX_DYNAMODB_ITEM_BYTES = 360 * 1024
@@ -114,7 +115,7 @@ class OperationalRepository:
             count = len(parsed["records"])
             self._upsert_market_area(context, parsed["records"])
         elif document_type == "bulk-plan":
-            count = self._upsert_market_bulk_plan(context, parsed["loads"])
+            count = self._upsert_bulk_plan(context, parsed["loads"])
         elif document_type == "projection":
             for requirement in parsed["requirements"]:
                 self._upsert_projection(context, requirement, import_id, source_key)
@@ -134,9 +135,7 @@ class OperationalRepository:
         key = {"pk": build_markets_pk(context), "sk": build_market_sk(area)}
         existing = self._table.get_item(Key=key).get("Item") or {}
         previous_statuses = _machine_zip_statuses(existing)
-        # Retain the other operational workflows already stored in this same
-        # market item when the production workbook is re-imported.
-        item: dict[str, Any] = {**key, **{field: existing[field] for field in {"bulkPlan"} if field in existing}}
+        item: dict[str, Any] = dict(key)
         seen_zips: set[tuple[str, str]] = set()
         for record in records:
             machine = str(record.get("machine") or "Unassigned").strip() or "Unassigned"
@@ -155,17 +154,14 @@ class OperationalRepository:
             })
         self._put_market_item(item)
 
-    def _upsert_market_bulk_plan(self, context: OperationalContext, loads: list[dict[str, Any]]) -> int:
-        """Replace each affected market's compact Bulk Plan list."""
-        grouped: dict[str, list[dict[str, Any]]] = {}
-        for load in loads:
-            area = _market_area(load.get("area"))
-            grouped.setdefault(area, []).append(dict(load))
-        for area, market_loads in grouped.items():
-            key = {"pk": build_markets_pk(context), "sk": build_market_sk(area)}
-            existing = self._table.get_item(Key=key).get("Item") or {}
-            item = {**existing, **key, "bulkPlan": market_loads}
-            self._put_market_item(item)
+    def _upsert_bulk_plan(self, context: OperationalContext, loads: list[dict[str, Any]]) -> int:
+        """Replace the independent Shipping Bulk Plan for one operational week."""
+        item = {
+            "pk": build_markets_pk(context),
+            "sk": build_bulk_plan_sk(),
+            "loads": [dict(load) for load in loads],
+        }
+        self._put_market_item(item)
         return len(loads)
 
     def _put_market_item(self, item: dict[str, Any]) -> None:
@@ -237,13 +233,13 @@ class OperationalRepository:
         # lists are nested below machine names.  The browser, however, needs a
         # normal list of ZIP records to filter, search, and render.  Flattening
         # happens only in this API read model; it does not create child items.
-        market_items = self._query_partition(build_markets_pk(context))
+        weekly_items = self._query_partition(build_markets_pk(context))
         items = self._query_partition(build_week_pk(context))
         return {
             "id": str(context.week), "label": f"Week {context.week}", "organizationId": context.organization_id,
             "year": context.year, "week": context.week,
-            "productionRecords": _flatten_market_records(market_items, context),
-            "loads": _market_loads(market_items),
+            "productionRecords": _flatten_market_records(weekly_items, context),
+            "loads": _bulk_plan_loads(weekly_items),
             "queuePlan": None,
             "projectionRequirements": [item for item in items if item.get("entityType") == "PROJECTION"],
         }
@@ -381,20 +377,9 @@ def _market_record_identity(record_id: str) -> tuple[str, str]:
     return machine, zip_value
 
 
-def _market_area(value: object) -> str:
-    """Normalize shipping/projection names to the production market keys."""
-    normalized = str(value or "UNASSIGNED").strip().upper().replace(" ", "_").replace("-", "_")
-    aliases = {
-        "FE": "FE", "FRONT_END": "FE", "FRONTEND": "FE",
-        "BE": "BE", "BACK_END": "BE", "BACKEND": "BE",
-        "MMSI": "MMSI",
-        "PROV_BOST": "PROV-BOST", "PROVIDENCE_BOSTON": "PROV-BOST",
-    }
-    return aliases.get(normalized, normalized)
-
-
-def _market_loads(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [load for item in items for load in item.get("bulkPlan", []) if isinstance(load, dict)]
+def _bulk_plan_loads(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    item = next((value for value in items if value.get("sk") == build_bulk_plan_sk()), {})
+    return [load for load in item.get("loads", []) if isinstance(load, dict)]
 
 
 def _dynamo_values(value: Any) -> Any:
