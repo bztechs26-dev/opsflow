@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 import os
 from typing import Any
+import json
 
 from dynamodb.keys import (
     OperationalContext,
@@ -33,6 +34,12 @@ from dynamodb.keys import (
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+_MARKET_METADATA_FIELDS = {"pk", "sk", "bulkPlan"}
+# Keep a margin below DynamoDB's 400 KB hard item limit because DynamoDB also
+# counts attribute names and type metadata, not only the JSON source values.
+_MAX_DYNAMODB_ITEM_BYTES = 360 * 1024
 
 
 class OperationalRepository:
@@ -106,12 +113,8 @@ class OperationalRepository:
         if document_type == "production":
             count = len(parsed["records"])
             self._upsert_market_area(context, parsed["records"])
-            self._register_week(context)
-            return count
         elif document_type == "bulk-plan":
-            for load in parsed["loads"]:
-                self._upsert_load(context, load, import_id, source_key)
-            count = len(parsed["loads"])
+            count = self._upsert_market_bulk_plan(context, parsed["loads"])
         elif document_type == "projection":
             for requirement in parsed["requirements"]:
                 self._upsert_projection(context, requirement, import_id, source_key)
@@ -119,7 +122,8 @@ class OperationalRepository:
         else:
             raise ValueError(f"Unsupported document type: {document_type}")
         self._register_week(context)
-        self.refresh_load_relationships(context)
+        if document_type == "projection":
+            self.refresh_load_relationships(context)
         return count
 
     def _upsert_market_area(self, context: OperationalContext, records: list[dict[str, Any]]) -> None:
@@ -130,7 +134,9 @@ class OperationalRepository:
         key = {"pk": build_markets_pk(context), "sk": build_market_sk(area)}
         existing = self._table.get_item(Key=key).get("Item") or {}
         previous_statuses = _machine_zip_statuses(existing)
-        item: dict[str, Any] = dict(key)
+        # Retain the other operational workflows already stored in this same
+        # market item when the production workbook is re-imported.
+        item: dict[str, Any] = {**key, **{field: existing[field] for field in {"bulkPlan"} if field in existing}}
         seen_zips: set[tuple[str, str]] = set()
         for record in records:
             machine = str(record.get("machine") or "Unassigned").strip() or "Unassigned"
@@ -147,6 +153,29 @@ class OperationalRepository:
                 "market": str(record.get("market") or ""),
                 "status": previous_statuses.get(identity),
             })
+        self._put_market_item(item)
+
+    def _upsert_market_bulk_plan(self, context: OperationalContext, loads: list[dict[str, Any]]) -> int:
+        """Replace each affected market's compact Bulk Plan list."""
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for load in loads:
+            area = _market_area(load.get("area"))
+            grouped.setdefault(area, []).append(dict(load))
+        for area, market_loads in grouped.items():
+            key = {"pk": build_markets_pk(context), "sk": build_market_sk(area)}
+            existing = self._table.get_item(Key=key).get("Item") or {}
+            item = {**existing, **key, "bulkPlan": market_loads}
+            self._put_market_item(item)
+        return len(loads)
+
+    def _put_market_item(self, item: dict[str, Any]) -> None:
+        """Fail clearly before DynamoDB rejects an oversized compact item."""
+        size = len(json.dumps(item, default=str, separators=(",", ":")).encode("utf-8"))
+        if size > _MAX_DYNAMODB_ITEM_BYTES:
+            raise ValueError(
+                f"{item['sk']} is {size:,} bytes and is too close to DynamoDB's 400 KB item limit. "
+                "Split this market's source workbook before uploading."
+            )
         self._table.put_item(Item=_dynamo_values(item))
 
     def _upsert_production(self, context: OperationalContext, record: dict[str, Any], import_id: str, source_key: str) -> None:
@@ -214,7 +243,7 @@ class OperationalRepository:
             "id": str(context.week), "label": f"Week {context.week}", "organizationId": context.organization_id,
             "year": context.year, "week": context.week,
             "productionRecords": _flatten_market_records(market_items, context),
-            "loads": [item for item in items if item.get("entityType") == "LOAD"],
+            "loads": _market_loads(market_items),
             "queuePlan": None,
             "projectionRequirements": [item for item in items if item.get("entityType") == "PROJECTION"],
         }
@@ -297,7 +326,7 @@ def _machine_zip_statuses(item: dict[str, Any]) -> dict[tuple[str, str], Any]:
     """Read retained clerk statuses from a prior machine-keyed area item."""
     statuses: dict[tuple[str, str], Any] = {}
     for machine, rows in item.items():
-        if machine in {"pk", "sk"} or not isinstance(rows, list):
+        if machine in _MARKET_METADATA_FIELDS or not isinstance(rows, list):
             continue
         for row in rows:
             if isinstance(row, dict) and "zip" in row:
@@ -314,7 +343,7 @@ def _flatten_market_records(items: list[dict[str, Any]], context: OperationalCon
         if not sk.startswith("MARKET-"):
             continue
         area = sk.removeprefix("MARKET-")
-        for machine in sorted(key for key, value in item.items() if key not in {"pk", "sk"} and isinstance(value, list)):
+        for machine in sorted(key for key, value in item.items() if key not in _MARKET_METADATA_FIELDS and isinstance(value, list)):
             rows = item[machine]
             for row in rows:
                 if not isinstance(row, dict) or not row.get("zip"):
@@ -350,6 +379,22 @@ def _market_record_identity(record_id: str) -> tuple[str, str]:
     if not separator or not machine.strip() or not zip_value.strip():
         raise ValueError("recordId must identify a machine and ZIP.")
     return machine, zip_value
+
+
+def _market_area(value: object) -> str:
+    """Normalize shipping/projection names to the production market keys."""
+    normalized = str(value or "UNASSIGNED").strip().upper().replace(" ", "_").replace("-", "_")
+    aliases = {
+        "FE": "FE", "FRONT_END": "FE", "FRONTEND": "FE",
+        "BE": "BE", "BACK_END": "BE", "BACKEND": "BE",
+        "MMSI": "MMSI",
+        "PROV_BOST": "PROV-BOST", "PROVIDENCE_BOSTON": "PROV-BOST",
+    }
+    return aliases.get(normalized, normalized)
+
+
+def _market_loads(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [load for item in items for load in item.get("bulkPlan", []) if isinstance(load, dict)]
 
 
 def _dynamo_values(value: Any) -> Any:
