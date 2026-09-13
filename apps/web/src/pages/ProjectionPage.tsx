@@ -117,7 +117,7 @@ function unlinkedMappingLoads(loads: Load[], requirements: ProjectionRequirement
   }
   return [...requirementsByTrip.entries()].filter(([trip]) => !shippingTrips.has(trip)).map(([trip, tripRequirements]): Load => {
     const areas = [...new Set(tripRequirements.map((requirement) => areaFromFileName(requirement.sourceName)))]
-    return { id: `mapping-${trip}`, number: trip, area: areas[0], carrier: '-', destination: 'Shipping load not found for this week', equipment: '-', weight: '-', stops: 0, pickup: '-', status: 'PLANNED' }
+    return { id: `mapping-${trip}`, number: trip, area: areas[0], carrier: '-', destination: 'Shipping load not found for this week', equipment: '-', weight: '-', stops: 0, pickup: '-', status: 'NOT_STARTED' }
   })
 }
 

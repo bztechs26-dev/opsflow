@@ -78,7 +78,7 @@ export async function updateShippingStatus(year: number, week: string, loadNumbe
   const response = await request(`/shipping/${year}/${encodeURIComponent(week)}/${encodeURIComponent(loadNumber)}/status`, token, {
     method: 'PATCH', body: JSON.stringify({ status }),
   })
-  const data = await response.json() as { message?: string; number?: string; status?: string }
+  const data = await response.json() as { message?: string; number?: string; status?: string; dispatchedAt?: string | null }
   if (!response.ok) throw new Error(data.message ?? 'Could not update Shipping status.')
   return data
 }

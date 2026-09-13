@@ -57,6 +57,8 @@ class FakeTable:
             row_index = int(kwargs["UpdateExpression"].split("[")[1].split("]")[0])
             item["loads"][row_index]["status"] = values[":status"]
             item["loads"][row_index]["updatedBy"] = values[":updatedBy"]
+            if ":dispatchedAt" in values:
+                item["loads"][row_index]["dispatchedAt"] = values[":dispatchedAt"]
         else:
             item.update({"status": values[":status"]})
         self.items[(key["pk"], key["sk"])] = item
@@ -214,11 +216,13 @@ class OperationalKeyTests(unittest.TestCase):
             {"id": "36-load-100", "number": "100", "carrier": "Ryder", "stops": 4, "status": "READY"},
             {"id": "36-load-101", "number": "101", "carrier": "Ryder", "stops": 4, "status": "READY"},
         ])
-        updated = repo.update_bulk_plan_status(self.week_36, "101", "DELIVERED", "user-1")
+        updated = repo.update_bulk_plan_status(self.week_36, "101", "DISPATCHED", "user-1")
         loads = table.items[("2026-36", build_bulk_plan_sk())]["loads"]
-        self.assertEqual(updated, {"number": "101", "status": "DELIVERED"})
+        self.assertEqual(updated["number"], "101")
+        self.assertEqual(updated["status"], "DISPATCHED")
+        self.assertIsNotNone(updated["dispatchedAt"])
         self.assertEqual(loads[0]["status"], "READY")
-        self.assertEqual(loads[1]["status"], "DELIVERED")
+        self.assertEqual(loads[1]["status"], "DISPATCHED")
         self.assertEqual(loads[1]["updatedBy"], "user-1")
 
     def test_bulk_plan_reimport_uses_latest_workbook_section_order(self) -> None:
@@ -245,7 +249,7 @@ class OperationalKeyTests(unittest.TestCase):
         })
         self.assertEqual(closed["sourceStatus"], "Closed")
         self.assertEqual(closed["planState"], "CLOSED")
-        self.assertEqual(closed["status"], "CANCELLED")
+        self.assertEqual(closed["status"], "CLOSED")
 
     def test_bulk_plan_area_sheet_overrides_stale_data_sheet_details(self) -> None:
         load = _load_from_values("36", {

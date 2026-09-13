@@ -193,22 +193,24 @@ def _destination_type(destination: str) -> str:
 def _load_status(source_status: str) -> str:
     status = source_status.lower()
     if "close" in status or "cancel" in status:
-        return "CANCELLED"
+        return "CLOSED"
     if "deliver" in status:
-        return "DELIVERED"
+        return "DISPATCHED"
     if "in transit" in status or "in_transit" in status or "in-transit" in status:
-        return "IN_TRANSIT"
+        return "DISPATCHED"
     if "loaded" in status:
         return "LOADED"
     if "delay" in status:
         return "DELAYED"
     if any(marker in status for marker in ("issue", "declin", "cancel")):
         return "ISSUE"
+    if "stage" in status:
+        return "STAGED"
     if "ready" in status or "accept" in status:
-        return "READY"
+        return "NOT_STARTED"
     if "plan" in status:
-        return "PLANNED"
-    return "SCHEDULED"
+        return "NOT_STARTED"
+    return "NOT_STARTED"
 
 
 def _plan_state(source_status: str) -> str:

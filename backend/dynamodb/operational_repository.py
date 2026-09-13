@@ -293,15 +293,23 @@ class OperationalRepository:
         row_index = next((index for index, load in enumerate(loads) if isinstance(load, dict) and str(load.get("number") or "").strip() == normalized_number), None)
         if row_index is None:
             raise ValueError("The Bulk Plan load was not found.")
+        update_expression = f"SET #loads[{row_index}].#status = :status, #loads[{row_index}].#updatedBy = :updatedBy"
+        names = {"#loads": "loads", "#status": "status", "#number": "number", "#updatedBy": "updatedBy"}
+        values: dict[str, Any] = {":status": status, ":number": normalized_number, ":updatedBy": updated_by}
+        if status == "DISPATCHED":
+            update_expression += f", #loads[{row_index}].#dispatchedAt = :dispatchedAt"
+            names["#dispatchedAt"] = "dispatchedAt"
+            values[":dispatchedAt"] = utc_now()
         updated = self._table.update_item(
             Key=key,
-            UpdateExpression=f"SET #loads[{row_index}].#status = :status, #loads[{row_index}].#updatedBy = :updatedBy",
+            UpdateExpression=update_expression,
             ConditionExpression=f"attribute_exists(pk) AND #loads[{row_index}].#number = :number",
-            ExpressionAttributeNames={"#loads": "loads", "#status": "status", "#number": "number", "#updatedBy": "updatedBy"},
-            ExpressionAttributeValues={":status": status, ":number": normalized_number, ":updatedBy": updated_by},
+            ExpressionAttributeNames=names,
+            ExpressionAttributeValues=values,
             ReturnValues="ALL_NEW",
         )["Attributes"]
-        return {"number": normalized_number, "status": updated["loads"][row_index]["status"]}
+        current = updated["loads"][row_index]
+        return {"number": normalized_number, "status": current["status"], "dispatchedAt": current.get("dispatchedAt")}
 
     def refresh_load_relationships(self, context: OperationalContext) -> None:
         """Rebuild derived LOADREQ/PRODLOAD adjacency only; never source/user records."""
@@ -411,7 +419,23 @@ def _market_record_identity(record_id: str) -> tuple[str, str]:
 
 def _bulk_plan_loads(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     item = next((value for value in items if value.get("sk") == build_bulk_plan_sk()), {})
-    return [load for load in item.get("loads", []) if isinstance(load, dict)]
+    loads = []
+    for load in item.get("loads", []):
+        if not isinstance(load, dict):
+            continue
+        value = dict(load)
+        value["status"] = _normalized_shipping_status(value.get("status"))
+        loads.append(value)
+    return loads
+
+
+def _normalized_shipping_status(value: object) -> str:
+    """Render prior saved values using the current Shipping vocabulary."""
+    legacy = str(value or "").upper()
+    return {
+        "PLANNED": "NOT_STARTED", "SCHEDULED": "NOT_STARTED", "READY": "NOT_STARTED",
+        "IN_TRANSIT": "DISPATCHED", "DELIVERED": "DISPATCHED", "CANCELLED": "CLOSED",
+    }.get(legacy, legacy or "NOT_STARTED")
 
 
 def _merge_bulk_plan_loads(existing_loads: list[dict[str, Any]], incoming_loads: list[dict[str, Any]]) -> list[dict[str, Any]]:

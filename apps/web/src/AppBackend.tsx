@@ -99,7 +99,7 @@ function OperationsApp({ session, onSignOut }: { session: Session; onSignOut: ()
       const updated = await updateShippingStatusApi(week?.year ?? operationalYear, weekId, load.number, status, session.idToken)
       setWeeks((items) => items.map((item) => item.id === weekId ? {
         ...item,
-        loads: item.loads.map((current) => current.id === id ? { ...current, status: updated.status as typeof current.status } : current),
+        loads: item.loads.map((current) => current.id === id ? { ...current, status: updated.status as typeof current.status, dispatchedAt: updated.dispatchedAt ?? current.dispatchedAt } : current),
       } : item))
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not update Shipping status.'
