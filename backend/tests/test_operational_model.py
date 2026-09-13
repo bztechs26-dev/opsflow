@@ -9,6 +9,8 @@ import unittest
 
 BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND))
+LAMBDA_SOURCE = BACKEND / "lambda" / "src"
+sys.path.insert(0, str(LAMBDA_SOURCE))
 
 from dynamodb.keys import (
     OperationalContext,
@@ -23,6 +25,7 @@ from dynamodb.keys import (
     production_record_id,
 )
 from dynamodb.operational_repository import OperationalRepository, _bulk_plan_loads, _flatten_market_records
+from parsers.bulk_plan import _column_index, _load_from_values
 
 
 class FakeTable:
@@ -174,6 +177,42 @@ class OperationalKeyTests(unittest.TestCase):
         self.assertNotIn("loads", production)
         self.assertEqual(bulk_plan["loads"][0]["number"], "100")
         self.assertEqual(_bulk_plan_loads([production, bulk_plan])[0]["number"], "100")
+
+    def test_bulk_plan_reimport_updates_trip_details_and_adds_only_new_trips(self) -> None:
+        table = FakeTable()
+        repo = OperationalRepository(table=table)
+        repo._upsert_bulk_plan(self.week_36, [{
+            "id": "36-load-100", "number": "100", "carrier": "West Michigan", "stops": 8,
+            "status": "READY", "destination": "Boston",
+        }])
+        item_key = ("2026-36", build_bulk_plan_sk())
+        table.items[item_key]["loads"][0]["status"] = "LOADED"
+        table.items[item_key]["loads"][0]["notes"] = "Dock appointment confirmed"
+
+        repo._upsert_bulk_plan(self.week_36, [
+            {"id": "36-load-100", "number": "100", "carrier": "Ryder", "stops": 4, "status": "READY", "destination": "Boston"},
+            {"id": "36-load-101", "number": "101", "carrier": "Ryder", "stops": 4, "status": "READY", "destination": "Boston"},
+        ])
+
+        loads = table.items[item_key]["loads"]
+        self.assertEqual(len(loads), 2)
+        original = next(load for load in loads if load["number"] == "100")
+        self.assertEqual(original["carrier"], "Ryder")
+        self.assertEqual(original["stops"], 4)
+        self.assertEqual(original["status"], "LOADED")
+        self.assertEqual(original["notes"], "Dock appointment confirmed")
+        self.assertEqual(next(load for load in loads if load["number"] == "101")["stops"], 4)
+
+    def test_bulk_plan_reads_driver_signed_pick_release_and_keeps_closed_trip_static(self) -> None:
+        headers = ["Shipment ID", "Driver Signed/Pick Release Ready"]
+        self.assertEqual(_column_index(headers, "driver_signed/pick_release_ready"), 1)
+        closed = _load_from_values("36", {
+            "shipmentId": "100", "carrier": "Ryder", "destination": "Boston", "equipment": "53FT",
+            "weight": "10", "stops": "4", "sourceStatus": "Closed",
+        })
+        self.assertEqual(closed["sourceStatus"], "Closed")
+        self.assertEqual(closed["planState"], "CLOSED")
+        self.assertEqual(closed["status"], "CANCELLED")
 
     def test_week_control_is_one_compact_item(self) -> None:
         table = FakeTable()

@@ -42,11 +42,7 @@ def _parse_data_sheet(workbook: XlsxWorkbook, week: str) -> list[dict[str, Any]]
             "stops": _column(row, headers, "Number of Stops"),
             "pickup": _column(row, headers, "Start Time"),
             "delivery": _column(row, headers, "End Time"),
-            "sourceStatus": " ".join([
-                text(_column(row, headers, "Status")),
-                text(_column(row, headers, "Status", 1)),
-                text(_column(row, headers, "8125_Status")),
-            ]),
+            "sourceStatus": _source_status(row, headers),
         }))
     return loads
 
@@ -105,6 +101,7 @@ def _parse_area_sheets(workbook: XlsxWorkbook, week: str, detail_loads: list[dic
                 "weight": _column(row, headers, "Weight"),
                 "stops": _column(row, headers, "# of Stops"),
                 "pickup": _column(row, headers, "Pick release") or _column(row, headers, "Pick Release"),
+                "sourceStatus": _source_status(row, headers),
             })
             load.update({"area": area, "routeGroup": route_group, "routeRole": route_role})
             grouped.append(load)
@@ -134,6 +131,7 @@ def _parse_tabular_sheet(workbook: XlsxWorkbook, week: str) -> list[dict[str, An
                     "destination": _column(row, headers, "Destination Location Name"),
                     "weight": _column(row, headers, "Total Gross Weight"),
                     "stops": _column(row, headers, "Number of Stops"),
+                    "sourceStatus": _source_status(row, headers),
                 }))
         if loads:
             return loads
@@ -145,6 +143,7 @@ def _load_from_values(week: str, values: dict[str, object]) -> dict[str, Any]:
     destination = text(values.get("destination")) or "Unassigned destination"
     pickup = text(values.get("pickup"))
     delivery = text(values.get("delivery"))
+    source_status = text(values.get("sourceStatus"))
     weight_pounds = int(number(values.get("weight")))
     return {
         "id": f"{week}-load-{shipment}",
@@ -159,7 +158,12 @@ def _load_from_values(week: str, values: dict[str, object]) -> dict[str, Any]:
         "stops": int(number(values.get("stops"))),
         "pickup": pickup or "Bulk-plan schedule pending",
         "deliveryDate": delivery or None,
-        "status": _load_status(text(values.get("sourceStatus"))),
+        # ``sourceStatus`` is the planner's Driver Signed/Pick Release Ready
+        # value.  It is refreshed for every workbook version; dashboard
+        # status is retained by the repository once a user changes it.
+        "sourceStatus": source_status,
+        "planState": _plan_state(source_status),
+        "status": _load_status(source_status),
     }
 
 
@@ -185,6 +189,8 @@ def _destination_type(destination: str) -> str:
 
 def _load_status(source_status: str) -> str:
     status = source_status.lower()
+    if "close" in status or "cancel" in status:
+        return "CANCELLED"
     if "deliver" in status:
         return "DELIVERED"
     if "in transit" in status or "in_transit" in status or "in-transit" in status:
@@ -202,6 +208,24 @@ def _load_status(source_status: str) -> str:
     return "SCHEDULED"
 
 
+def _plan_state(source_status: str) -> str:
+    """Return whether a planner still considers the trip active."""
+    status = source_status.lower()
+    return "CLOSED" if "close" in status or "cancel" in status else "ACTIVE"
+
+
+def _source_status(row: list[str], headers: list[str]) -> str:
+    """Read the planner status, supporting the client's fixed header name."""
+    explicit = _column(row, headers, "driver_signed/pick_release_ready")
+    if explicit:
+        return text(explicit)
+    return " ".join(filter(None, [
+        text(_column(row, headers, "Status")),
+        text(_column(row, headers, "Status", 1)),
+        text(_column(row, headers, "8125_Status")),
+    ]))
+
+
 def _column(row: list[str], headers: list[str], name: str, occurrence: int = 0) -> str:
     position = _column_index(headers, name, occurrence)
     return _row_value(row, position)
@@ -210,11 +234,15 @@ def _column(row: list[str], headers: list[str], name: str, occurrence: int = 0) 
 def _column_index(headers: list[str], name: str, occurrence: int = 0) -> int:
     matches = 0
     for index, value in enumerate(headers):
-        if value == name:
+        if _header_name(value) == _header_name(name):
             if matches == occurrence:
                 return index
             matches += 1
     return -1
+
+
+def _header_name(value: object) -> str:
+    return text(value).strip().lower().replace(" ", "_").replace("-", "_")
 
 
 def _row_value(row: list[str], index: int) -> str:

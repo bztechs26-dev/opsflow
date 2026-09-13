@@ -155,11 +155,20 @@ class OperationalRepository:
         self._put_market_item(item)
 
     def _upsert_bulk_plan(self, context: OperationalContext, loads: list[dict[str, Any]]) -> int:
-        """Replace the independent Shipping Bulk Plan for one operational week."""
+        """Merge a revised Bulk Plan into its independent weekly Shipping item.
+
+        A Bulk Plan is a current-week plan snapshot.  Its trip/load number is
+        the stable identity: a later workbook may correct planner-owned
+        details such as carrier, stops, weight, or schedule for that trip,
+        while a new trip is appended.  User-owned operational fields (for
+        example a future UI-updated status or note) are retained.
+        """
+        key = {"pk": build_markets_pk(context), "sk": build_bulk_plan_sk()}
+        existing = self._table.get_item(Key=key).get("Item") or {}
+        merged_loads = _merge_bulk_plan_loads(existing.get("loads", []), loads)
         item = {
-            "pk": build_markets_pk(context),
-            "sk": build_bulk_plan_sk(),
-            "loads": [dict(load) for load in loads],
+            **key,
+            "loads": merged_loads,
         }
         self._put_market_item(item)
         return len(loads)
@@ -170,7 +179,7 @@ class OperationalRepository:
         if size > _MAX_DYNAMODB_ITEM_BYTES:
             raise ValueError(
                 f"{item['sk']} is {size:,} bytes and is too close to DynamoDB's 400 KB item limit. "
-                "Split this market's source workbook before uploading."
+                "Reduce the number of records in this source workbook before uploading."
             )
         self._table.put_item(Item=_dynamo_values(item))
 
@@ -380,6 +389,54 @@ def _market_record_identity(record_id: str) -> tuple[str, str]:
 def _bulk_plan_loads(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     item = next((value for value in items if value.get("sk") == build_bulk_plan_sk()), {})
     return [load for load in item.get("loads", []) if isinstance(load, dict)]
+
+
+def _merge_bulk_plan_loads(existing_loads: list[dict[str, Any]], incoming_loads: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return a load-number merge of an existing plan and one new workbook.
+
+    ``number`` is the planner's trip/load identifier, not a display value.
+    Existing records retain fields that do not originate in the workbook.  In
+    particular, an operations user can later own ``status`` without an
+    updated plan resetting it.  Workbook fields otherwise refresh so the
+    schedule remains aligned with the latest Bulk Plan.
+    """
+    existing_by_number: dict[str, int] = {}
+    merged = [dict(load) for load in existing_loads if isinstance(load, dict)]
+    for index, load in enumerate(merged):
+        number = _bulk_plan_load_number(load)
+        if number in existing_by_number:
+            raise ValueError(f"The stored Bulk Plan has duplicate load number '{number}'.")
+        existing_by_number[number] = index
+
+    seen_incoming: set[str] = set()
+    for incoming in incoming_loads:
+        load = dict(incoming)
+        number = _bulk_plan_load_number(load)
+        if number in seen_incoming:
+            raise ValueError(f"The uploaded Bulk Plan has duplicate load number '{number}'.")
+        seen_incoming.add(number)
+        existing_index = existing_by_number.get(number)
+        if existing_index is None:
+            merged.append(load)
+            existing_by_number[number] = len(merged) - 1
+            continue
+
+        current = merged[existing_index]
+        # A file refresh owns plan details.  Preserve dashboard fields until
+        # the Shipping status/notes API is introduced.
+        refreshed = {**current, **load}
+        for field in ("status", "notes", "updatedBy", "updatedAt"):
+            if field in current:
+                refreshed[field] = current[field]
+        merged[existing_index] = refreshed
+    return merged
+
+
+def _bulk_plan_load_number(load: dict[str, Any]) -> str:
+    number = str(load.get("number") or "").strip()
+    if not number:
+        raise ValueError("Every Bulk Plan load must have a trip/load number.")
+    return number
 
 
 def _dynamo_values(value: Any) -> Any:
