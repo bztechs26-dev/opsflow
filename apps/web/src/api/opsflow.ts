@@ -60,9 +60,9 @@ export async function fetchWeek(week: string, token: string) {
 
 export async function fetchProjectionRequirements(week: string, token: string) {
   const response = await request(`/projections?year=${operationalYear}&week=${encodeURIComponent(week)}`, token)
-  const data = await response.json() as { requirements?: unknown[]; message?: string }
+  const data = await response.json() as { mappings?: Record<string, string[]>; message?: string }
   if (!response.ok) throw new Error(data.message ?? 'Could not load projection mappings.')
-  return data.requirements ?? []
+  return Object.entries(data.mappings ?? {}).flatMap(([trip, atzs]) => atzs.map((atz) => ({ trip, atz, jobNumber: '', requiredHH: 1, sourceName: '' })))
 }
 
 export async function updateProductionStatus(year: number, week: string, area: string, routeId: string, machine: string, zip: string, status: string, version: number | undefined, token: string) {

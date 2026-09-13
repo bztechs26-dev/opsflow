@@ -252,6 +252,19 @@ class OperationalRepository:
         prefix = f"{year}-"
         return [value.removeprefix(prefix) for value in item.get("weeks", []) if value.startswith(prefix)]
 
+    def projection_mappings(self, context: OperationalContext) -> dict[str, list[str]]:
+        item = self._table.get_item(Key={
+            "pk": build_markets_pk(context), "sk": build_projection_mappings_sk(),
+        }).get("Item") or {}
+        mappings = item.get("mappings", {})
+        if not isinstance(mappings, dict):
+            return {}
+        return {
+            str(trip): [str(atz) for atz in atzs if str(atz).strip()]
+            for trip, atzs in mappings.items()
+            if isinstance(atzs, list)
+        }
+
     def week_data(self, context: OperationalContext) -> dict[str, Any]:
         # Production is stored compactly: one item per market area and its ZIP
         # lists are nested below machine names.  The browser, however, needs a

@@ -20,12 +20,7 @@ export function ProjectionPage({ weeks, selectedWeekId, token = '' }: { weeks: O
   const [expandedTripIds, setExpandedTripIds] = useState<Set<string>>(() => new Set())
   const week = weeks.find((item) => item.id === weekId)
 
-  const selectMappingWorkbook = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]; const fileWeek = file ? weekFromFileName(file.name) : undefined
-    if (!file || !fileWeek) return
-    if (weeks.some((item) => item.id === fileWeek)) { setWeekId(fileWeek); setArea('ALL'); setMessage(`Week ${fileWeek} selected from ${file.name}.`) }
-    else setMessage(`This file is for Week ${fileWeek}, which has no uploaded Shipping week yet.`)
-  }
+  const selectMappingWorkbook = () => setMessage('')
 
   const refreshRequirements = useCallback(async () => {
     if (!weekId) return setRequirements([])
@@ -83,8 +78,7 @@ function deriveProjections(loads: Load[], production: ProductionRecord[], requir
   for (const requirement of requirements) { const key = normalizeTrip(requirement.trip); byTrip.set(key, [...(byTrip.get(key) ?? []), requirement]) }
   return loads.map((load): TripProjection => {
     const tripRequirements = byTrip.get(normalizeTrip(load.number)) ?? []
-    const mappedAreas = [...new Set(tripRequirements.map((requirement) => areaFromFileName(requirement.sourceName)))]
-    const areas = mappedAreas.length ? mappedAreas : [load.area ?? 'UNASSIGNED']
+    const areas = [load.area ?? 'UNASSIGNED']
     if (!tripRequirements.length) return { load, requirements: [], zipProgress: [], areas, completeHH: 0, requiredHH: 0, blocked: 0, skipped: 0, matched: 0, percent: 0, readiness: 'MAPPING_PENDING', remainingHH: 0, machineEstimates: [], excludedH1Pieces: 0, sources: [] }
     const matches = tripRequirements.map((requirement) => {
       const exact = byJobAndAtz.get(`${requirement.jobNumber}|${normalizeAtz(requirement.atz)}`) ?? []
@@ -125,7 +119,6 @@ function normalizeTrip(value: string) { return value.replace(/\D/g, '').replace(
 function normalizeAtz(value: string) { return value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '') }
 function machineRate(machine: string) { const normalized = machine.trim().toUpperCase(); if (/^A\d+/.test(normalized) && normalized !== 'A05') return 10_000; if (/^(?:FERAG|F)\s*0?\d+/.test(normalized)) return 20_000; return 0 }
 function bestProductionMatch(records: ProductionRecord[]) { const priority: Record<ProductionRecord['status'], number> = { COMPLETE: 5, IN_PROGRESS: 4, NOT_STARTED: 3, BLOCKED: 2, SKIPPED: 1 }; return records.reduce<ProductionRecord | undefined>((best, record) => !best || priority[record.status] > priority[best.status] ? record : best, undefined) }
-function weekFromFileName(fileName: string) { return fileName.match(/\b(?:wk|week)[\s_-]*(\d{1,2})\b/i)?.[1] }
 function areaFromFileName(fileName: string) { const name = fileName.toUpperCase(); if (/\b(?:BE|BACK[ _-]?END)\b/.test(name)) return 'BACK_END'; if (/\b(?:FE|FRONT[ _-]?END)\b/.test(name)) return 'FRONT_END'; if (/\bMMSI\b/.test(name)) return 'MMSI'; if (/\b(?:BOST|BOS|PROV|HART)\b/.test(name)) return 'PROVIDENCE_BOSTON'; return 'UNASSIGNED' }
 function ReadinessBadge({ readiness }: { readiness: Readiness }) { const label = readiness === 'MAPPING_PENDING' ? 'MAPPING PENDING' : readiness === 'NEEDS_REVIEW' ? 'ZIPs MISSING' : readiness === 'BLOCKED' ? 'ZIPs SHORT' : readiness.replaceAll('_', ' '); return <span className={`status projection-${readiness.toLowerCase()}`}>{label}</span> }
 function ZipStatusBadge({ status }: { status: ZipProgress['status'] }) { const label = status === 'MISSING' ? 'ZIP MISSING' : status === 'BLOCKED' ? 'ZIP SHORT' : status === 'SKIPPED' ? 'SKIPPED / LATE' : status.replaceAll('_', ' '); return <span className={`status zip-status-${status.toLowerCase()}`}>{label}</span> }

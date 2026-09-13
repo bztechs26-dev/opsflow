@@ -201,6 +201,7 @@ class OperationalKeyTests(unittest.TestCase):
             "4561886": ["21009C1", "21014B1"],
             "4561892": ["21146C1"],
         })
+        self.assertEqual(repo.projection_mappings(self.week_36), item["mappings"])
         self.assertNotIn("entityType", item)
 
     def test_bulk_plan_reimport_updates_trip_details_and_adds_only_new_trips(self) -> None:
