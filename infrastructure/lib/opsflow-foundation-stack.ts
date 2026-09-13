@@ -238,12 +238,19 @@ export class OpsflowFoundationStack extends cdk.Stack {
         authorizationType: apigateway.AuthorizationType.COGNITO,
         authorizer: apiAuthorizer,
       });
-    api.root
+    const shippingLoad = api.root
       .addResource('shipping')
       .addResource('{year}')
       .addResource('{week}')
-      .addResource('{loadNumber}')
+      .addResource('{loadNumber}');
+    shippingLoad
       .addResource('status')
+      .addMethod('PATCH', new apigateway.LambdaIntegration(healthFunction), {
+        authorizationType: apigateway.AuthorizationType.COGNITO,
+        authorizer: apiAuthorizer,
+      });
+    shippingLoad
+      .addResource('hub-assignment')
       .addMethod('PATCH', new apigateway.LambdaIntegration(healthFunction), {
         authorizationType: apigateway.AuthorizationType.COGNITO,
         authorizer: apiAuthorizer,

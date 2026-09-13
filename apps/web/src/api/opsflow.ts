@@ -83,6 +83,15 @@ export async function updateShippingStatus(year: number, week: string, loadNumbe
   return data
 }
 
+export async function updateShippingHubAssignment(year: number, week: string, loadNumber: string, hubTrip: string | undefined, token: string) {
+  const response = await request(`/shipping/${year}/${encodeURIComponent(week)}/${encodeURIComponent(loadNumber)}/hub-assignment`, token, {
+    method: 'PATCH', body: JSON.stringify({ hubTrip: hubTrip || null }),
+  })
+  const data = await response.json() as { message?: string; number?: string; assignedHubTrip?: string | null }
+  if (!response.ok) throw new Error(data.message ?? 'Could not update the hub assignment.')
+  return data
+}
+
 function request(path: string, token: string, init: RequestInit = {}) {
   return fetch(`${apiBaseUrl}${path}`, {
     ...init,

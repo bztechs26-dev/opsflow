@@ -25,9 +25,11 @@ const areaLabels: Record<string, string> = {
 export function ShippingPage({
   loads,
   onStatusChange,
+  onHubAssignmentChange,
 }: {
   loads: Load[];
   onStatusChange?: (id: string, status: LoadStatus) => Promise<void>;
+  onHubAssignmentChange?: (id: string, hubTrip: string | undefined) => Promise<void>;
 }) {
   // This view is intentionally backed only by imported DynamoDB data.
   // Never substitute demonstration loads when an operational week has no Bulk Plan.
@@ -46,6 +48,9 @@ export function ShippingPage({
       ),
   );
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [expandedHubTrips, setExpandedHubTrips] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [exportFormat, setExportFormat] = useState<ExportFormat>("XLSX");
   useEffect(() => {
     setRecords(loads);
@@ -343,6 +348,26 @@ export function ShippingPage({
                       >
                         <td>
                           <span className="load-number">{record.number}</span>
+                          {record.routeRole === "HUB_LINEHAUL" && (
+                            <button
+                              className="hub-assignment-toggle"
+                              type="button"
+                              aria-expanded={expandedHubTrips.has(record.number)}
+                              aria-label={`${expandedHubTrips.has(record.number) ? "Hide" : "Show"} DDU loads assigned to hub trip ${record.number}`}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setExpandedHubTrips((items) => {
+                                  const next = new Set(items);
+                                  next.has(record.number)
+                                    ? next.delete(record.number)
+                                    : next.add(record.number);
+                                  return next;
+                                });
+                              }}
+                            >
+                              {expandedHubTrips.has(record.number) ? "−" : "+"}
+                            </button>
+                          )}
                         </td>
                         <td>{record.carrier}</td>
                         <td>{record.destination}</td>
@@ -372,6 +397,29 @@ export function ShippingPage({
                         <td>{formatDispatchTime(record.dispatchedAt)}</td>
                       </tr>
                     )}
+                    {record.routeRole === "HUB_LINEHAUL" &&
+                      expandedHubTrips.has(record.number) &&
+                      records
+                        .filter(
+                          (load) =>
+                            load.routeRole === "HUB_SPOKE" &&
+                            load.routeGroup === record.routeGroup &&
+                            load.assignedHubTrip === record.number,
+                        )
+                        .map((load) => (
+                          <tr className="assigned-spoke-row" key={`assigned-${record.id}-${load.id}`}>
+                            <td>↳ {load.number}</td>
+                            <td>{load.carrier}</td>
+                            <td>{load.destination}</td>
+                            <td>{load.destinationType ?? inferType(load.destination)}</td>
+                            <td>{load.equipment}</td>
+                            <td>{load.weight}</td>
+                            <td>{load.stops}</td>
+                            <td>{load.pickup}</td>
+                            <td><StatusBadge status={load.status} /></td>
+                            <td>{formatDispatchTime(load.dispatchedAt)}</td>
+                          </tr>
+                        ))}
                   </Fragment>
                 );
               })}
@@ -398,8 +446,17 @@ export function ShippingPage({
             </button>
             <LoadDetails
               load={selected}
+              hubTrips={records.filter(
+                (load) =>
+                  load.routeRole === "HUB_LINEHAUL" &&
+                  load.routeGroup === selected.routeGroup,
+              )}
               onStatusChange={(status) => {
                 const request = onStatusChange?.(selected.id, status);
+                void request?.catch(() => undefined);
+              }}
+              onHubAssignmentChange={(hubTrip) => {
+                const request = onHubAssignmentChange?.(selected.id, hubTrip);
                 void request?.catch(() => undefined);
               }}
             />
@@ -578,10 +635,14 @@ function LoadTypeDonut({ loads }: { loads: Load[] }) {
 }
 function LoadDetails({
   load,
+  hubTrips,
   onStatusChange,
+  onHubAssignmentChange,
 }: {
   load: Load;
+  hubTrips: Load[];
   onStatusChange: (status: LoadStatus) => void;
+  onHubAssignmentChange: (hubTrip: string | undefined) => void;
 }) {
   return (
     <aside className="panel load-details">
@@ -624,6 +685,25 @@ function LoadDetails({
           ))}
         </select>
       </label>
+      {load.routeRole === "HUB_SPOKE" && (
+        <label className="detail-status">
+          Assign to hub trip
+          <select
+            className="status-select"
+            value={load.assignedHubTrip ?? ""}
+            onChange={(event) =>
+              onHubAssignmentChange(event.target.value || undefined)
+            }
+          >
+            <option value="">Not assigned</option>
+            {hubTrips.map((hubTrip) => (
+              <option key={hubTrip.id} value={hubTrip.number}>
+                {hubTrip.number} — {hubTrip.destination}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <div className="detail-section">
         <strong>Operational notes</strong>
         <p>{load.notes ?? "No operational notes have been recorded."}</p>

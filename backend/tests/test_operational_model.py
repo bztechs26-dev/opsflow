@@ -55,7 +55,10 @@ class FakeTable:
             item[machine][row_index]["status"] = values[":status"]
         elif "#loads" in names:
             row_index = int(kwargs["UpdateExpression"].split("[")[1].split("]")[0])
-            item["loads"][row_index]["status"] = values[":status"]
+            if ":status" in values:
+                item["loads"][row_index]["status"] = values[":status"]
+            if ":hub" in values:
+                item["loads"][row_index]["assignedHubTrip"] = values[":hub"]
             item["loads"][row_index]["updatedBy"] = values[":updatedBy"]
             if ":dispatchedAt" in values:
                 item["loads"][row_index]["dispatchedAt"] = values[":dispatchedAt"]
@@ -224,6 +227,37 @@ class OperationalKeyTests(unittest.TestCase):
         self.assertEqual(loads[0]["status"], "READY")
         self.assertEqual(loads[1]["status"], "DISPATCHED")
         self.assertEqual(loads[1]["updatedBy"], "user-1")
+
+    def test_hub_assignment_is_limited_to_the_same_hub_spoke_section(self) -> None:
+        table = FakeTable()
+        repo = OperationalRepository(table=table)
+        repo._upsert_bulk_plan(self.week_36, [
+            {"id": "36-load-boston-hub", "number": "100", "routeGroup": "Boston Hub", "routeRole": "HUB_LINEHAUL"},
+            {"id": "36-load-nj-hub", "number": "200", "routeGroup": "NJ Hub", "routeRole": "HUB_LINEHAUL"},
+            {"id": "36-load-boston-ddu", "number": "101", "routeGroup": "Boston Hub", "routeRole": "HUB_SPOKE"},
+            {"id": "36-load-shared-ddu", "number": "300", "routeGroup": "Shared", "routeRole": "SHARED"},
+        ])
+        updated = repo.update_bulk_plan_hub_assignment(self.week_36, "101", "100", "scheduler")
+        self.assertEqual(updated["assignedHubTrip"], "100")
+        with self.assertRaises(ValueError):
+            repo.update_bulk_plan_hub_assignment(self.week_36, "101", "200", "scheduler")
+        with self.assertRaises(ValueError):
+            repo.update_bulk_plan_hub_assignment(self.week_36, "300", "100", "scheduler")
+
+    def test_bulk_plan_reimport_preserves_hub_assignment(self) -> None:
+        table = FakeTable()
+        repo = OperationalRepository(table=table)
+        repo._upsert_bulk_plan(self.week_36, [
+            {"id": "36-load-hub", "number": "100", "routeGroup": "Boston Hub", "routeRole": "HUB_LINEHAUL"},
+            {"id": "36-load-ddu", "number": "101", "routeGroup": "Boston Hub", "routeRole": "HUB_SPOKE"},
+        ])
+        repo.update_bulk_plan_hub_assignment(self.week_36, "101", "100", "scheduler")
+        repo._upsert_bulk_plan(self.week_36, [
+            {"id": "36-load-hub", "number": "100", "routeGroup": "Boston Hub", "routeRole": "HUB_LINEHAUL"},
+            {"id": "36-load-ddu", "number": "101", "routeGroup": "Boston Hub", "routeRole": "HUB_SPOKE", "carrier": "Ryder"},
+        ])
+        loads = table.items[("2026-36", build_bulk_plan_sk())]["loads"]
+        self.assertEqual(next(load for load in loads if load["number"] == "101")["assignedHubTrip"], "100")
 
     def test_bulk_plan_reimport_uses_latest_workbook_section_order(self) -> None:
         table = FakeTable()

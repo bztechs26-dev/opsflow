@@ -311,6 +311,38 @@ class OperationalRepository:
         current = updated["loads"][row_index]
         return {"number": normalized_number, "status": current["status"], "dispatchedAt": current.get("dispatchedAt")}
 
+    def update_bulk_plan_hub_assignment(
+        self, context: OperationalContext, spoke_number: str, hub_number: str | None, updated_by: str,
+    ) -> dict[str, Any]:
+        """Assign one hub-spoke DDU load to a linehaul in its exact section."""
+        key = {"pk": build_markets_pk(context), "sk": build_bulk_plan_sk()}
+        item = self._table.get_item(Key=key).get("Item")
+        if not item or not isinstance(item.get("loads"), list):
+            raise ValueError("The weekly Bulk Plan was not found.")
+        loads = item["loads"]
+        spoke_number = str(spoke_number or "").strip()
+        hub_number = str(hub_number or "").strip() or None
+        spoke_index = next((index for index, load in enumerate(loads) if isinstance(load, dict) and str(load.get("number") or "").strip() == spoke_number), None)
+        if spoke_index is None:
+            raise ValueError("The Hub Spoke load was not found.")
+        spoke = loads[spoke_index]
+        if spoke.get("routeRole") != "HUB_SPOKE":
+            raise ValueError("Only Hub Spoke Delivery loads can be assigned to a hub trip.")
+        if hub_number:
+            hub = next((load for load in loads if isinstance(load, dict) and str(load.get("number") or "").strip() == hub_number), None)
+            if not hub or hub.get("routeRole") != "HUB_LINEHAUL" or hub.get("routeGroup") != spoke.get("routeGroup"):
+                raise ValueError("Choose a Hub Linehaul trip from the same Hub & Spoke section.")
+        updated = self._table.update_item(
+            Key=key,
+            UpdateExpression=f"SET #loads[{spoke_index}].#assignedHubTrip = :hub, #loads[{spoke_index}].#updatedBy = :updatedBy",
+            ConditionExpression=f"attribute_exists(pk) AND #loads[{spoke_index}].#number = :number",
+            ExpressionAttributeNames={"#loads": "loads", "#assignedHubTrip": "assignedHubTrip", "#updatedBy": "updatedBy", "#number": "number"},
+            ExpressionAttributeValues={":hub": hub_number, ":updatedBy": updated_by, ":number": spoke_number},
+            ReturnValues="ALL_NEW",
+        )["Attributes"]
+        current = updated["loads"][spoke_index]
+        return {"number": spoke_number, "assignedHubTrip": current.get("assignedHubTrip")}
+
     def refresh_load_relationships(self, context: OperationalContext) -> None:
         """Rebuild derived LOADREQ/PRODLOAD adjacency only; never source/user records."""
         items = self._query_partition(build_week_pk(context))
@@ -473,7 +505,7 @@ def _merge_bulk_plan_loads(existing_loads: list[dict[str, Any]], incoming_loads:
         # A file refresh owns plan details.  Preserve dashboard fields until
         # the Shipping status/notes API is introduced.
         refreshed = {**current, **load}
-        for field in ("status", "notes", "updatedBy", "updatedAt"):
+        for field in ("status", "notes", "updatedBy", "updatedAt", "assignedHubTrip"):
             if field in current:
                 refreshed[field] = current[field]
         merged.append(refreshed)

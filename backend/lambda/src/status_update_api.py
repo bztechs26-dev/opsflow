@@ -71,6 +71,28 @@ def update_shipping_status(event: dict[str, Any]) -> dict[str, Any]:
         raise
 
 
+def update_shipping_hub_assignment(event: dict[str, Any]) -> dict[str, Any]:
+    """Persist an explicit DDU-to-linehaul assignment within one Hub & Spoke section."""
+    try:
+        path = event.get("pathParameters") or {}
+        context = OperationalContext(os.environ["DEFAULT_ORGANIZATION_ID"], path.get("year"), path.get("week"))
+        load_number = str(path.get("loadNumber", "")).strip()
+        body = _json_body(event)
+        hub_trip = body.get("hubTrip")
+        if hub_trip is not None and not isinstance(hub_trip, (str, int)):
+            raise ValueError("hubTrip must be a trip number or empty to clear the assignment.")
+        claims = ((event.get("requestContext") or {}).get("authorizer") or {}).get("claims") or {}
+        updated_by = str(claims.get("sub") or claims.get("email") or "authenticated-user")
+        item = OperationalRepository().update_bulk_plan_hub_assignment(context, load_number, None if hub_trip is None else str(hub_trip), updated_by)
+        return _response(200, item)
+    except (TypeError, ValueError) as error:
+        return _response(400, {"message": str(error)})
+    except Exception as error:
+        if _conditional_failure(error):
+            return _response(409, {"message": "This Bulk Plan load was changed by another user. Refresh and try again."})
+        raise
+
+
 def _json_body(event: dict[str, Any]) -> dict[str, Any]:
     body = event.get("body") or "{}"
     if event.get("isBase64Encoded"):
