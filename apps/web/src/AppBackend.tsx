@@ -128,7 +128,7 @@ function OperationsApp({ session, onSignOut }: { session: Session; onSignOut: ()
   }
 
   const content = page === 'projection'
-    ? <ProjectionPage weeks={weeks} selectedWeekId={weekId} token={session.idToken} />
+    ? <ProjectionPage weeks={weeks} selectedWeekId={weekId} token={session.idToken} onDataChanged={refresh} />
     : !week
       ? <section className="panel empty-page"><h2>No operational weeks loaded</h2><p>Upload a Production QA workbook or Bulk Plan to add an operational week.</p></section>
       : page === 'production'

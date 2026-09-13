@@ -33,16 +33,18 @@ export async function signIn(username: string, password: string): Promise<Sessio
   return session
 }
 
-export async function uploadWorkbook(type: UploadType, file: File, token: string, operationalWeek?: number) {
+export type WorkbookUpload = { importId: string; week?: number; area?: string }
+
+export async function uploadWorkbook(type: UploadType, file: File, token: string, operationalWeek?: number): Promise<WorkbookUpload> {
   const response = await request(`/uploads/${type}`, token, {
     method: 'POST',
     body: JSON.stringify({ operationalYear, operationalWeek, fileName: file.name, fileSize: file.size, contentType: file.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
   })
-  const data = await response.json() as { message?: string; uploadUrl?: string; importId?: string }
+  const data = await response.json() as { message?: string; uploadUrl?: string; importId?: string; week?: number; area?: string }
   if (!response.ok || !data.uploadUrl || !data.importId) throw new Error(data.message ?? 'Could not prepare the workbook upload.')
   const upload = await fetch(data.uploadUrl, { method: 'PUT', headers: { 'content-type': file.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }, body: file })
   if (!upload.ok) throw new Error('The workbook could not be uploaded to S3.')
-  return data.importId
+  return { importId: data.importId, week: data.week, area: data.area }
 }
 
 export async function fetchWeeks(token: string) {
@@ -58,11 +60,13 @@ export async function fetchWeek(week: string, token: string) {
   return response.json()
 }
 
-export async function fetchProjectionRequirements(week: string, token: string) {
+export type ProjectionMarket = { market: string; productionSourceArea: string; productionSourceWeek: number; mappings: Record<string, string[]> }
+
+export async function fetchProjectionMarkets(week: string, token: string): Promise<ProjectionMarket[]> {
   const response = await request(`/projections?year=${operationalYear}&week=${encodeURIComponent(week)}`, token)
-  const data = await response.json() as { mappings?: Record<string, string[]>; message?: string }
+  const data = await response.json() as { markets?: ProjectionMarket[]; message?: string }
   if (!response.ok) throw new Error(data.message ?? 'Could not load projection mappings.')
-  return Object.entries(data.mappings ?? {}).flatMap(([trip, atzs]) => atzs.map((atz) => ({ trip, atz, jobNumber: '', requiredHH: 1, sourceName: '' })))
+  return data.markets ?? []
 }
 
 export async function updateProductionStatus(year: number, week: string, area: string, routeId: string, machine: string, zip: string, status: string, version: number | undefined, token: string) {

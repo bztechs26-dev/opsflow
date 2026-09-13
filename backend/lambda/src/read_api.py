@@ -27,7 +27,7 @@ def read_operations(event: dict[str, Any]) -> dict[str, Any]:
         week = query.get("week", "")
         if not week:
             return _response(400, {"message": "week is required."})
-        return _response(200, {"mappings": repository.projection_mappings(OperationalContext(organization_id, year, week))})
+        return _response(200, {"markets": repository.projection_mappings(OperationalContext(organization_id, year, week))})
     if path == "/imports/{importId}":
         import_id = (event.get("pathParameters") or {}).get("importId", "")
         metadata = repository.import_metadata_by_id(organization_id, import_id)

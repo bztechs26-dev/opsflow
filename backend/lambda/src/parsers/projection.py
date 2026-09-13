@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from parsers.common import normalize_atz, text
+from parsers.common import normalize_atz, projection_market_from_filename, text
 from parsers.xlsx_reader import XlsxWorkbook
 
 
@@ -30,7 +30,7 @@ def parse_projection(contents: bytes, week: str, file_name: str) -> dict[str, An
     # Projection deliberately retains only the two source values needed for
     # readiness matching. Workbook name, color, and unrelated columns are not
     # part of the data model.
-    return {"mappings": {trip: sorted(zips) for trip, zips in mappings.items()}, "tripCount": len(mappings)}
+    return {"market": projection_market_from_filename(file_name), "mappings": {trip: sorted(zips) for trip, zips in mappings.items()}, "tripCount": len(mappings)}
 
 
 def _value(row: list[str], index: int) -> str:

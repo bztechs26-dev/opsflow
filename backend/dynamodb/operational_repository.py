@@ -118,7 +118,7 @@ class OperationalRepository:
         elif document_type == "bulk-plan":
             count = self._upsert_bulk_plan(context, parsed["loads"])
         elif document_type == "projection":
-            count = self._upsert_projection_mappings(context, parsed["mappings"])
+            count = self._upsert_projection_mappings(context, parsed["market"], parsed["mappings"])
         else:
             raise ValueError(f"Unsupported document type: {document_type}")
         self._register_week(context)
@@ -170,8 +170,8 @@ class OperationalRepository:
         self._put_market_item(item)
         return len(loads)
 
-    def _upsert_projection_mappings(self, context: OperationalContext, mappings: dict[str, list[str]]) -> int:
-        """Store a Projection workbook as one compact trip-to-ZIP map per week."""
+    def _upsert_projection_mappings(self, context: OperationalContext, market: str, mappings: dict[str, list[str]]) -> int:
+        """Store one Projection market workbook as a compact trip-to-ZIP map."""
         if not mappings:
             raise ValueError("A Projection workbook requires at least one ZIP/TR mapping.")
         normalized = {
@@ -181,10 +181,18 @@ class OperationalRepository:
         }
         if not normalized or any(not atzs for atzs in normalized.values()):
             raise ValueError("Each Projection trip must contain at least one ZIP.")
+        key = {"pk": build_markets_pk(context), "sk": build_projection_mappings_sk(market)}
+        existing = self._table.get_item(Key=key).get("Item") or {}
+        retained = existing.get("mappings", {}) if isinstance(existing.get("mappings", {}), dict) else {}
+        merged = {
+            str(trip): sorted({*map(str, retained.get(str(trip), [])), *atzs})
+            for trip, atzs in ({**retained, **normalized}).items()
+        }
         self._put_market_item({
-            "pk": build_markets_pk(context),
-            "sk": build_projection_mappings_sk(),
-            "mappings": normalized,
+            **key, "market": normalize_area(market),
+            "productionSourceArea": normalize_area(market),
+            "productionSourceWeek": context.week - 1 if normalize_area(market) == "PROV-BOST" else context.week,
+            "mappings": merged,
         })
         return sum(len(atzs) for atzs in normalized.values())
 
@@ -252,18 +260,14 @@ class OperationalRepository:
         prefix = f"{year}-"
         return [value.removeprefix(prefix) for value in item.get("weeks", []) if value.startswith(prefix)]
 
-    def projection_mappings(self, context: OperationalContext) -> dict[str, list[str]]:
-        item = self._table.get_item(Key={
-            "pk": build_markets_pk(context), "sk": build_projection_mappings_sk(),
-        }).get("Item") or {}
-        mappings = item.get("mappings", {})
-        if not isinstance(mappings, dict):
-            return {}
-        return {
-            str(trip): [str(atz) for atz in atzs if str(atz).strip()]
-            for trip, atzs in mappings.items()
-            if isinstance(atzs, list)
-        }
+    def projection_mappings(self, context: OperationalContext) -> list[dict[str, Any]]:
+        markets: list[dict[str, Any]] = []
+        for market in ("FE", "BE", "PROV-BOST"):
+            item = self._table.get_item(Key={"pk": build_markets_pk(context), "sk": build_projection_mappings_sk(market)}).get("Item") or {}
+            mappings = item.get("mappings", {})
+            if isinstance(mappings, dict) and mappings:
+                markets.append({"market": market, "productionSourceArea": item.get("productionSourceArea", market), "productionSourceWeek": item.get("productionSourceWeek", context.week), "mappings": mappings})
+        return markets
 
     def week_data(self, context: OperationalContext) -> dict[str, Any]:
         # Production is stored compactly: one item per market area and its ZIP

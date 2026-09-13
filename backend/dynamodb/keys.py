@@ -128,9 +128,9 @@ def build_bulk_plan_sk() -> str:
     return "BULK-PLAN"
 
 
-def build_projection_mappings_sk() -> str:
-    """The one compact ZIP-to-trip map used by Projection for a week."""
-    return "PROJECTION-MAPPINGS"
+def build_projection_mappings_sk(market: str) -> str:
+    """One compact ZIP-to-trip map for a Projection market and week."""
+    return f"PROJECTION-{normalize_area(market)}"
 
 
 def stable_record_id(prefix: str, identity: dict[str, object]) -> str:

@@ -90,3 +90,14 @@ def mapping_area_from_filename(file_name: str) -> str:
     if re.search(r"\b(?:BOST|BOS|PROV|HART)\b", name):
         return "PROVIDENCE_BOSTON"
     return "UNASSIGNED"
+
+
+def projection_market_from_filename(file_name: str) -> str:
+    name = file_name.upper()
+    if re.search(r"(?:^|[^A-Z0-9])FE(?:[^A-Z0-9]|$)|FRONT[ _-]?END", name):
+        return "FE"
+    if re.search(r"(?:^|[^A-Z0-9])BE(?:[^A-Z0-9]|$)|BACK[ _-]?END", name):
+        return "BE"
+    if any(marker in name for marker in ("BOST", "PROV", "HART")):
+        return "PROV-BOST"
+    raise ValueError("Projection files must identify FE, BE, or Bost CT Hart in the filename.")

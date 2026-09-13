@@ -1,4 +1,62 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { fetchProjectionMarkets, type ProjectionMarket, uploadWorkbook } from '../api/opsflow'
+import type { OperationalWeek, ProductionRecord, ProductionStatus } from '../types/operations'
+
+type ZipProgress = { zip: string; status: ProductionStatus | 'MISSING' }
+type TripProjection = { market: string; trip: string; zips: ZipProgress[]; complete: number; percent: number; readiness: string }
+const labels: Record<string, string> = { FE: 'Front End', BE: 'Back End', 'PROV-BOST': 'Boston / CT / Hartford' }
+
+export function ProjectionPage({ weeks, selectedWeekId, token = '', onDataChanged }: { weeks: OperationalWeek[]; selectedWeekId: string; token?: string; onDataChanged?: () => Promise<void> }) {
+  const input = useRef<HTMLInputElement>(null)
+  const [weekId, setWeekId] = useState(selectedWeekId || weeks[0]?.id || '')
+  const [selectedMarket, setSelectedMarket] = useState('ALL')
+  const [markets, setMarkets] = useState<ProjectionMarket[]>([])
+  const [message, setMessage] = useState('')
+  const [isUploading, setIsUploading] = useState(false)
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
+  useEffect(() => { if (!weekId && selectedWeekId) setWeekId(selectedWeekId) }, [selectedWeekId, weekId])
+  const refreshMarkets = useCallback(async (requestedWeek = weekId) => {
+    if (!requestedWeek) { setMarkets([]); return }
+    try { setMarkets(await fetchProjectionMarkets(requestedWeek, token)) } catch (error) { setMessage(error instanceof Error ? error.message : 'Projection storage is unavailable.') }
+  }, [token, weekId])
+  useEffect(() => { void refreshMarkets() }, [refreshMarkets])
+  const projections = useMemo(() => deriveTrips(markets, weeks), [markets, weeks])
+  const visible = projections.filter((item) => selectedMarket === 'ALL' || item.market === selectedMarket)
+  const upload = async () => {
+    const file = input.current?.files?.[0]
+    if (!file) return setMessage('Choose a Projection ZIP/TR workbook first.')
+    setIsUploading(true); setMessage('')
+    try {
+      const result = await uploadWorkbook('projection', file, token)
+      const importedWeek = String(result.week ?? '')
+      setMessage(`Upload accepted. ${labels[result.area ?? ''] ?? result.area ?? 'Projection'} Week ${importedWeek} is being processed.`)
+      if (input.current) input.current.value = ''
+      for (let attempt = 0; attempt < 5; attempt += 1) { await delay(1500); await onDataChanged?.(); if (importedWeek) { setWeekId(importedWeek); await refreshMarkets(importedWeek) } }
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'The ZIP/TR workbook could not be stored.') } finally { setIsUploading(false) }
+  }
+  const selectWeek = (value: string) => { setWeekId(value); setSelectedMarket('ALL'); setExpanded(new Set()) }
+  const toggle = (id: string) => setExpanded((current) => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next })
+  const ready = visible.filter((item) => item.readiness === 'READY').length
+  const partial = visible.filter((item) => item.readiness === 'PARTIALLY_READY').length
+  return <section className="page projection-page">
+    <div className="page-heading"><div><h1>Projection</h1><p>Trip-to-ZIP production progress by Projection market and operational week.</p></div></div>
+    <section className="panel projection-upload"><div><span className="metric-label">Projection intake</span><h2>Upload a ZIP / TR workbook</h2><p>The filename identifies the market and Projection week: FE Wk 37, BE Wk 37, or Bost CT Hart Wk 37. ZIP is read from column A and TR from column C.</p></div><div className="projection-form"><label>Projection week<select className="week-select" value={weekId} onChange={(event) => selectWeek(event.target.value)} disabled={!weeks.length}>{weeks.length ? weeks.map((item) => <option key={item.id} value={item.id}>{item.label}</option>) : <option value="">No uploaded weeks</option>}</select></label><label className="projection-file">ZIP / TR workbook<input ref={input} type="file" accept=".xlsx" onChange={() => setMessage('')} /></label><button className="primary-button" type="button" onClick={() => void upload()} disabled={isUploading}>{isUploading ? 'Importing...' : 'Import projection workbook'}</button></div>{message && <p className="projection-message">{message}</p>}</section>
+    {!weekId ? <section className="panel empty-page"><h2>No Projection week loaded</h2><p>Upload a Projection workbook to create its week and market tab.</p></section> : <><nav className="production-subnav projection-tabs" aria-label="Projection markets"><button className={selectedMarket === 'ALL' ? 'active' : ''} onClick={() => setSelectedMarket('ALL')}>All markets <span>{projections.length}</span></button>{markets.map((market) => <button className={selectedMarket === market.market ? 'active' : ''} key={market.market} onClick={() => setSelectedMarket(market.market)}>{labels[market.market] ?? market.market} <span>{Object.keys(market.mappings).length}</span></button>)}</nav>
+    <div className="metric-grid projection-metrics"><Metric label="Trips" value={String(visible.length)} detail={`Mapped for Projection Week ${weekId}`}/><Metric label="Production ready" value={String(ready)} detail="All ZIPs are complete"/><Metric label="In progress" value={String(partial)} detail="Some ZIPs are complete"/><Metric label="Mapped ZIPs" value={String(visible.reduce((total, item) => total + item.zips.length, 0))} detail="Only ZIP and trip mappings are shown"/></div>
+    <section className="panel projection-table"><div className="panel-header"><div><h2>Projection trips</h2><span>Expand a trip to see each ZIP and its live Production status.</span></div><span>{visible.length} visible trips</span></div><div className="table-wrap"><table className="data-table projection-trip-table"><thead><tr><th>Trip number</th><th>ZIPs</th><th>Production progress</th><th>Readiness</th></tr></thead><tbody>{visible.map((item) => { const id = `${item.market}-${item.trip}`; const open = expanded.has(id); return <><tr key={id}><td><button className="trip-details-toggle" type="button" onClick={() => toggle(id)} aria-expanded={open}><span>{open ? '-' : '+'}</span>{item.trip}</button></td><td>{item.zips.length}</td><td><div className="projection-progress"><div className="progress-label"><span>{item.complete} of {item.zips.length} ZIPs complete</span><strong>{item.percent}%</strong></div><div className="progress-track"><div className="progress-fill" style={{ width: `${item.percent}%` }} /></div></div></td><td><Readiness readiness={item.readiness}/></td></tr>{open && <tr className="trip-details-row" key={`${id}-details`}><td colSpan={4}><table className="data-table zip-details-table"><thead><tr><th>ZIP / ATZ</th><th>Production status</th></tr></thead><tbody>{item.zips.map((zip) => <tr key={zip.zip}><td>{zip.zip}</td><td><ZipStatus status={zip.status}/></td></tr>)}</tbody></table></td></tr>}</> })}</tbody></table></div>{!visible.length && <div className="empty-state"><h3>No Projection mappings found</h3><p>Upload an FE, BE, or Bost CT Hart ZIP/TR workbook for this week.</p></div>}</section></>}</section>
+}
+
+function deriveTrips(markets: ProjectionMarket[], weeks: OperationalWeek[]): TripProjection[] { return markets.flatMap((market) => Object.entries(market.mappings).map(([trip, zips]) => { const source = weeks.find((week) => Number(week.id) === market.productionSourceWeek); const records = (source?.productionRecords ?? []).filter((record) => normalizeArea(record.sourceArea) === normalizeArea(market.productionSourceArea)); const progress = zips.map((zip) => ({ zip, status: bestStatus(records.filter((record) => normalizeZip(record.zip) === normalizeZip(zip))) })); const complete = progress.filter((item) => item.status === 'COMPLETE').length; const statuses = progress.map((item) => item.status); const readiness = statuses.includes('BLOCKED') ? 'BLOCKED' : statuses.includes('SKIPPED') ? 'LATE' : statuses.includes('MISSING') ? 'NEEDS_REVIEW' : complete === zips.length ? 'READY' : complete ? 'PARTIALLY_READY' : 'NOT_READY'; return { market: market.market, trip, zips: progress, complete, percent: zips.length ? Math.round((complete / zips.length) * 100) : 0, readiness } })) }
+function bestStatus(records: ProductionRecord[]): ProductionStatus | 'MISSING' { const priority: Record<ProductionStatus, number> = { COMPLETE: 5, IN_PROGRESS: 4, NOT_STARTED: 3, BLOCKED: 2, SKIPPED: 1 }; return records.reduce<ProductionStatus | 'MISSING'>((best, record) => best === 'MISSING' || priority[record.status] > priority[best] ? record.status : best, 'MISSING') }
+function normalizeZip(value: string) { return value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '') }
+function normalizeArea(value: string | undefined) { return (value ?? '').trim().toUpperCase().replace(/[ _]+/g, '-') }
+function Readiness({ readiness }: { readiness: string }) { return <span className={`status projection-${readiness.toLowerCase()}`}>{readiness === 'NEEDS_REVIEW' ? 'ZIPs missing' : readiness.replaceAll('_', ' ')}</span> }
+function ZipStatus({ status }: { status: ProductionStatus | 'MISSING' }) { return <span className={`status zip-status-${status.toLowerCase()}`}>{status === 'MISSING' ? 'ZIP missing' : status.replaceAll('_', ' ')}</span> }
+function Metric({ label, value, detail }: { label: string; value: string; detail: string }) { return <section className="metric-card"><span className="metric-label">{label}</span><strong className="metric-value">{value}</strong><div className="metric-detail">{detail}</div></section> }
+function delay(milliseconds: number) { return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds)) }
+
+/* Legacy Projection implementation retained below while the source patch is applied.
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { fetchProjectionRequirements, uploadWorkbook } from '../api/opsflow'
 import type { Load, OperationalWeek, ProductionRecord } from '../types/operations'
 
@@ -126,3 +184,4 @@ function RunTimeEstimate({ projection }: { projection: TripProjection }) { if (p
 function MachineEstimatePanel({ projection }: { projection: TripProjection }) { return <section className="machine-estimate-panel"><div><strong>Machine run-time estimate</strong><span>Alpha and Ferag machines run in parallel.</span></div>{projection.machineEstimates.length ? <div className="machine-estimate-grid">{projection.machineEstimates.map((estimate) => <div key={estimate.machine}><strong>{estimate.machine}</strong><span>{estimate.remainingPieces.toLocaleString()} pcs remaining</span><b>{formatHours(estimate.hours)}</b></div>)}</div> : <p>No active runnable ZIPs are assigned to a production machine.</p>}{projection.excludedH1Pieces > 0 && <p>H1 review copies ({projection.excludedH1Pieces.toLocaleString()} pcs) are excluded from the machine estimate.</p>}{projection.skipped > 0 && <p className="run-time-alert">This trip is late until its skipped ZIPs are resolved. Skipped pieces are not counted as completed or as runnable machine work.</p>}</section> }
 function formatHours(hours: number) { return `${hours.toFixed(hours < 10 ? 1 : 0)} hr${Math.round(hours) === 1 ? '' : 's'}` }
 function Metric({ label, value, detail }: { label: string; value: string; detail: string }) { return <section className="metric-card"><span className="metric-label">{label}</span><strong className="metric-value">{value}</strong><div className="metric-detail">{detail}</div></section> }
+*/

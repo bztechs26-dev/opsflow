@@ -191,18 +191,35 @@ class OperationalKeyTests(unittest.TestCase):
     def test_projection_is_one_compact_trip_to_zip_map(self) -> None:
         table = FakeTable()
         repo = OperationalRepository(table=table)
-        count = repo._upsert_projection_mappings(self.week_36, {
+        count = repo._upsert_projection_mappings(self.week_36, "FE", {
             "4561886": ["21009C1", "21014B1", "21009C1"],
             "4561892": ["21146C1"],
         })
-        item = table.items[("2026-36", build_projection_mappings_sk())]
+        item = table.items[("2026-36", build_projection_mappings_sk("FE"))]
         self.assertEqual(count, 3)
         self.assertEqual(item["mappings"], {
             "4561886": ["21009C1", "21014B1"],
             "4561892": ["21146C1"],
         })
-        self.assertEqual(repo.projection_mappings(self.week_36), item["mappings"])
+        self.assertEqual(repo.projection_mappings(self.week_36), [{
+            "market": "FE", "productionSourceArea": "FE", "productionSourceWeek": 36,
+            "mappings": item["mappings"],
+        }])
         self.assertNotIn("entityType", item)
+
+    def test_projection_markets_are_retained_as_separate_items(self) -> None:
+        table = FakeTable()
+        repo = OperationalRepository(table=table)
+        repo._upsert_projection_mappings(self.week_36, "FE", {"100": ["07045"]})
+        repo._upsert_projection_mappings(self.week_36, "BE", {"200": ["07101"]})
+        repo._upsert_projection_mappings(self.week_36, "PROV-BOST", {"300": ["02108"]})
+        self.assertEqual(len(repo.projection_mappings(self.week_36)), 3)
+        self.assertEqual(table.items[("2026-36", build_projection_mappings_sk("FE"))]["mappings"], {"100": ["07045"]})
+        self.assertEqual(table.items[("2026-36", build_projection_mappings_sk("BE"))]["mappings"], {"200": ["07101"]})
+        boston = table.items[("2026-36", build_projection_mappings_sk("PROV-BOST"))]
+        self.assertEqual(boston["productionSourceWeek"], 35)
+        repo._upsert_projection_mappings(self.week_36, "FE", {"101": ["07046"]})
+        self.assertEqual(table.items[("2026-36", build_projection_mappings_sk("FE"))]["mappings"], {"100": ["07045"], "101": ["07046"]})
 
     def test_bulk_plan_reimport_updates_trip_details_and_adds_only_new_trips(self) -> None:
         table = FakeTable()
