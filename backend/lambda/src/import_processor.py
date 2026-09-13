@@ -10,7 +10,7 @@ import boto3
 
 from log_events import log_event
 from parsers.bulk_plan import parse_bulk_plan
-from parsers.common import mapping_area_from_filename, source_area_from_filename, week_from_filename
+from parsers.common import source_area_from_filename, week_from_filename
 from parsers.production import parse_production
 from parsers.projection import parse_projection
 from dynamodb.keys import OperationalContext
@@ -35,8 +35,8 @@ def process_inbox_uploads(event: dict[str, Any]) -> dict[str, Any]:
 
 
 def _process_one(bucket: str, key: str) -> None:
-    document_type, year, import_id, file_name = _upload_identity(key)
-    week = int(week_from_filename(file_name))
+    document_type, year, routed_week, import_id, file_name = _upload_identity(key)
+    week = routed_week if routed_week is not None else int(week_from_filename(file_name))
     context = OperationalContext(os.environ["DEFAULT_ORGANIZATION_ID"], year, week)
     area = _import_area(document_type, file_name)
     repository = OperationalRepository()
@@ -67,18 +67,28 @@ def _process_one(bucket: str, key: str) -> None:
         raise
 
 
-def _upload_identity(key: str) -> tuple[str, int, str, str]:
+def _upload_identity(key: str) -> tuple[str, int, int | None, str, str]:
     parts = key.split("/")
-    if len(parts) != 5 or parts[0] != "inbox" or parts[1] not in SUPPORTED_TYPES:
-        raise ValueError("Inbox files must use inbox/{production|bulk-plan|projection}/{year}/{import-id}/{filename}.")
-    document_type, year_text, import_id, file_name = parts[1:]
+    if parts[:2] == ["inbox", "projection"] and len(parts) == 6:
+        _, document_type, year_text, week_text, import_id, file_name = parts
+        if not week_text.startswith("week-"):
+            raise ValueError("Projection inbox files must include week-{number}.")
+        try:
+            routed_week = int(week_text.removeprefix("week-"))
+        except ValueError as error:
+            raise ValueError("Projection inbox files must include a valid operational week.") from error
+    elif len(parts) == 5 and parts[0] == "inbox" and parts[1] in SUPPORTED_TYPES:
+        _, document_type, year_text, import_id, file_name = parts
+        routed_week = None
+    else:
+        raise ValueError("Inbox files must use the configured operational upload path.")
     try:
         year = int(year_text)
     except ValueError as error:
         raise ValueError("Inbox uploads must include a valid operational year.") from error
     if not import_id or not file_name.lower().endswith(".xlsx"):
         raise ValueError("Inbox uploads must be Excel (.xlsx) workbooks.")
-    return document_type, year, import_id, file_name
+    return document_type, year, routed_week, import_id, file_name
 
 
 def _parse(document_type: str, contents: bytes, week: str, file_name: str) -> dict[str, Any]:
@@ -103,5 +113,5 @@ def _import_area(document_type: str, file_name: str) -> str:
             raise ValueError("Production files must be named Zip List <AREA> Wk <week>.xlsx.")
         return area
     if document_type == "projection":
-        return mapping_area_from_filename(file_name)
+        return "ALL"
     return "ALL"

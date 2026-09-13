@@ -11,8 +11,8 @@ from uuid import uuid4
 
 import boto3
 
-from parsers.common import mapping_area_from_filename, source_area_from_filename, week_from_filename
-from dynamodb.keys import OperationalContext, validate_year
+from parsers.common import source_area_from_filename, week_from_filename
+from dynamodb.keys import OperationalContext, validate_week, validate_year
 
 
 DOCUMENT_TYPES = {"production", "bulk-plan", "projection"}
@@ -34,12 +34,18 @@ def create_upload_url(event: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("Use an Excel (.xlsx) workbook.")
         if not 0 < file_size <= MAX_UPLOAD_BYTES:
             raise ValueError("The workbook must be between 1 byte and 10 MB.")
-        week = int(week_from_filename(file_name))
+        # Projection files come from a client-controlled source system, so the
+        # selected dashboard week—not a filename convention—identifies them.
+        week = validate_week(payload.get("operationalWeek")) if document_type == "projection" else int(week_from_filename(file_name))
         context = OperationalContext(os.environ["DEFAULT_ORGANIZATION_ID"], operational_year, week)
         area = _import_area(document_type, file_name)
         import_id = str(uuid4())
         safe_name = SAFE_FILENAME.sub("_", file_name)
-        object_key = f"inbox/{document_type}/{context.year}/{import_id}/{safe_name}"
+        object_key = (
+            f"inbox/projection/{context.year}/week-{context.week:02d}/{import_id}/{safe_name}"
+            if document_type == "projection"
+            else f"inbox/{document_type}/{context.year}/{import_id}/{safe_name}"
+        )
         upload_url = boto3.client("s3").generate_presigned_url(
             "put_object",
             Params={
@@ -89,5 +95,5 @@ def _import_area(document_type: str, file_name: str) -> str:
             raise ValueError("Production files must be named Zip List <AREA> Wk <week>.xlsx.")
         return area
     if document_type == "projection":
-        return mapping_area_from_filename(file_name)
+        return "ALL"
     return "ALL"

@@ -18,6 +18,7 @@ from dynamodb.keys import (
     build_import_lookup_pk,
     build_import_sk,
     build_bulk_plan_sk,
+    build_projection_mappings_sk,
     build_market_sk,
     build_markets_pk,
     build_load_requirement_sk,
@@ -117,14 +118,10 @@ class OperationalRepository:
         elif document_type == "bulk-plan":
             count = self._upsert_bulk_plan(context, parsed["loads"])
         elif document_type == "projection":
-            for requirement in parsed["requirements"]:
-                self._upsert_projection(context, requirement, import_id, source_key)
-            count = len(parsed["requirements"])
+            count = self._upsert_projection_mappings(context, parsed["mappings"])
         else:
             raise ValueError(f"Unsupported document type: {document_type}")
         self._register_week(context)
-        if document_type == "projection":
-            self.refresh_load_relationships(context)
         return count
 
     def _upsert_market_area(self, context: OperationalContext, records: list[dict[str, Any]]) -> None:
@@ -172,6 +169,24 @@ class OperationalRepository:
         }
         self._put_market_item(item)
         return len(loads)
+
+    def _upsert_projection_mappings(self, context: OperationalContext, mappings: dict[str, list[str]]) -> int:
+        """Store a Projection workbook as one compact trip-to-ZIP map per week."""
+        if not mappings:
+            raise ValueError("A Projection workbook requires at least one ZIP/TR mapping.")
+        normalized = {
+            str(trip).strip(): sorted({str(atz).strip().upper() for atz in atzs if str(atz).strip()})
+            for trip, atzs in mappings.items()
+            if str(trip).strip()
+        }
+        if not normalized or any(not atzs for atzs in normalized.values()):
+            raise ValueError("Each Projection trip must contain at least one ZIP.")
+        self._put_market_item({
+            "pk": build_markets_pk(context),
+            "sk": build_projection_mappings_sk(),
+            "mappings": normalized,
+        })
+        return sum(len(atzs) for atzs in normalized.values())
 
     def _put_market_item(self, item: dict[str, Any]) -> None:
         """Fail clearly before DynamoDB rejects an oversized compact item."""

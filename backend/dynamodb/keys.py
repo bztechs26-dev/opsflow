@@ -128,6 +128,11 @@ def build_bulk_plan_sk() -> str:
     return "BULK-PLAN"
 
 
+def build_projection_mappings_sk() -> str:
+    """The one compact ZIP-to-trip map used by Projection for a week."""
+    return "PROJECTION-MAPPINGS"
+
+
 def stable_record_id(prefix: str, identity: dict[str, object]) -> str:
     """Return a deterministic opaque ID for a normalized source-row identity."""
     normalized_prefix = normalize_area(prefix)

@@ -16,6 +16,7 @@ from dynamodb.keys import (
     OperationalContext,
     build_load_sk,
     build_bulk_plan_sk,
+    build_projection_mappings_sk,
     build_market_sk,
     build_markets_pk,
     build_weeks_control_key,
@@ -186,6 +187,21 @@ class OperationalKeyTests(unittest.TestCase):
         self.assertNotIn("loads", production)
         self.assertEqual(bulk_plan["loads"][0]["number"], "100")
         self.assertEqual(_bulk_plan_loads([production, bulk_plan])[0]["number"], "100")
+
+    def test_projection_is_one_compact_trip_to_zip_map(self) -> None:
+        table = FakeTable()
+        repo = OperationalRepository(table=table)
+        count = repo._upsert_projection_mappings(self.week_36, {
+            "4561886": ["21009C1", "21014B1", "21009C1"],
+            "4561892": ["21146C1"],
+        })
+        item = table.items[("2026-36", build_projection_mappings_sk())]
+        self.assertEqual(count, 3)
+        self.assertEqual(item["mappings"], {
+            "4561886": ["21009C1", "21014B1"],
+            "4561892": ["21146C1"],
+        })
+        self.assertNotIn("entityType", item)
 
     def test_bulk_plan_reimport_updates_trip_details_and_adds_only_new_trips(self) -> None:
         table = FakeTable()

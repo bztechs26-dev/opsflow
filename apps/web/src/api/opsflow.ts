@@ -33,10 +33,10 @@ export async function signIn(username: string, password: string): Promise<Sessio
   return session
 }
 
-export async function uploadWorkbook(type: UploadType, file: File, token: string) {
+export async function uploadWorkbook(type: UploadType, file: File, token: string, operationalWeek?: number) {
   const response = await request(`/uploads/${type}`, token, {
     method: 'POST',
-    body: JSON.stringify({ operationalYear, fileName: file.name, fileSize: file.size, contentType: file.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+    body: JSON.stringify({ operationalYear, operationalWeek, fileName: file.name, fileSize: file.size, contentType: file.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
   })
   const data = await response.json() as { message?: string; uploadUrl?: string; importId?: string }
   if (!response.ok || !data.uploadUrl || !data.importId) throw new Error(data.message ?? 'Could not prepare the workbook upload.')

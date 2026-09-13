@@ -41,7 +41,7 @@ export function ProjectionPage({ weeks, selectedWeekId, token = '' }: { weeks: O
     if (!file || !weekId) return setMessage('Choose a shipping week and ZIP/TR workbook first.')
     setIsUploading(true); setMessage('')
     try {
-      const importId = await uploadWorkbook('projection', file, token)
+      const importId = await uploadWorkbook('projection', file, token, Number(weekId))
       setMessage(`Upload accepted (import ${importId}). Lambda is processing the ZIP/TR mappings now.`); if (input.current) input.current.value = ''
       window.setTimeout(() => void refreshRequirements(), 3500)
     } catch (error) { setMessage(error instanceof Error ? error.message : 'The ZIP/TR workbook could not be stored.') } finally { setIsUploading(false) }
