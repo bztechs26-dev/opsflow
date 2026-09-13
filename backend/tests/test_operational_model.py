@@ -53,6 +53,10 @@ class FakeTable:
         if machine:
             row_index = int(kwargs["UpdateExpression"].split("[")[1].split("]")[0])
             item[machine][row_index]["status"] = values[":status"]
+        elif "#loads" in names:
+            row_index = int(kwargs["UpdateExpression"].split("[")[1].split("]")[0])
+            item["loads"][row_index]["status"] = values[":status"]
+            item["loads"][row_index]["updatedBy"] = values[":updatedBy"]
         else:
             item.update({"status": values[":status"]})
         self.items[(key["pk"], key["sk"])] = item
@@ -202,6 +206,35 @@ class OperationalKeyTests(unittest.TestCase):
         self.assertEqual(original["status"], "LOADED")
         self.assertEqual(original["notes"], "Dock appointment confirmed")
         self.assertEqual(next(load for load in loads if load["number"] == "101")["stops"], 4)
+
+    def test_bulk_plan_status_update_targets_one_exact_trip(self) -> None:
+        table = FakeTable()
+        repo = OperationalRepository(table=table)
+        repo._upsert_bulk_plan(self.week_36, [
+            {"id": "36-load-100", "number": "100", "carrier": "Ryder", "stops": 4, "status": "READY"},
+            {"id": "36-load-101", "number": "101", "carrier": "Ryder", "stops": 4, "status": "READY"},
+        ])
+        updated = repo.update_bulk_plan_status(self.week_36, "101", "DELIVERED", "user-1")
+        loads = table.items[("2026-36", build_bulk_plan_sk())]["loads"]
+        self.assertEqual(updated, {"number": "101", "status": "DELIVERED"})
+        self.assertEqual(loads[0]["status"], "READY")
+        self.assertEqual(loads[1]["status"], "DELIVERED")
+        self.assertEqual(loads[1]["updatedBy"], "user-1")
+
+    def test_bulk_plan_reimport_uses_latest_workbook_section_order(self) -> None:
+        table = FakeTable()
+        repo = OperationalRepository(table=table)
+        repo._upsert_bulk_plan(self.week_36, [
+            {"id": "36-load-100", "number": "100", "routeGroup": "Boston Hub", "status": "READY"},
+            {"id": "36-load-200", "number": "200", "routeGroup": "Front End", "status": "READY"},
+        ])
+        repo._upsert_bulk_plan(self.week_36, [
+            {"id": "36-load-200", "number": "200", "routeGroup": "Front End", "status": "READY"},
+            {"id": "36-load-101", "number": "101", "routeGroup": "Boston Hub", "status": "READY"},
+            {"id": "36-load-100", "number": "100", "routeGroup": "Boston Hub", "status": "READY"},
+        ])
+        loads = table.items[("2026-36", build_bulk_plan_sk())]["loads"]
+        self.assertEqual([load["number"] for load in loads], ["200", "101", "100"])
 
     def test_bulk_plan_reads_driver_signed_pick_release_and_keeps_closed_trip_static(self) -> None:
         headers = ["Shipment ID", "Driver Signed/Pick Release Ready"]

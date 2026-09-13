@@ -280,6 +280,29 @@ class OperationalRepository:
         )["Attributes"]
         return {"status": updated[machine][row_index]["status"]}
 
+    def update_bulk_plan_status(self, context: OperationalContext, load_number: str, status: str, updated_by: str) -> dict[str, Any]:
+        """Persist one Shipping load status without rewriting the weekly plan."""
+        key = {"pk": build_markets_pk(context), "sk": build_bulk_plan_sk()}
+        item = self._table.get_item(Key=key).get("Item")
+        if not item:
+            raise ValueError("The weekly Bulk Plan was not found.")
+        loads = item.get("loads")
+        if not isinstance(loads, list):
+            raise ValueError("The weekly Bulk Plan has no loads.")
+        normalized_number = str(load_number or "").strip()
+        row_index = next((index for index, load in enumerate(loads) if isinstance(load, dict) and str(load.get("number") or "").strip() == normalized_number), None)
+        if row_index is None:
+            raise ValueError("The Bulk Plan load was not found.")
+        updated = self._table.update_item(
+            Key=key,
+            UpdateExpression=f"SET #loads[{row_index}].#status = :status, #loads[{row_index}].#updatedBy = :updatedBy",
+            ConditionExpression=f"attribute_exists(pk) AND #loads[{row_index}].#number = :number",
+            ExpressionAttributeNames={"#loads": "loads", "#status": "status", "#number": "number", "#updatedBy": "updatedBy"},
+            ExpressionAttributeValues={":status": status, ":number": normalized_number, ":updatedBy": updated_by},
+            ReturnValues="ALL_NEW",
+        )["Attributes"]
+        return {"number": normalized_number, "status": updated["loads"][row_index]["status"]}
+
     def refresh_load_relationships(self, context: OperationalContext) -> None:
         """Rebuild derived LOADREQ/PRODLOAD adjacency only; never source/user records."""
         items = self._query_partition(build_week_pk(context))
@@ -400,35 +423,41 @@ def _merge_bulk_plan_loads(existing_loads: list[dict[str, Any]], incoming_loads:
     updated plan resetting it.  Workbook fields otherwise refresh so the
     schedule remains aligned with the latest Bulk Plan.
     """
-    existing_by_number: dict[str, int] = {}
-    merged = [dict(load) for load in existing_loads if isinstance(load, dict)]
-    for index, load in enumerate(merged):
+    existing_by_number: dict[str, dict[str, Any]] = {}
+    for load in existing_loads:
+        if not isinstance(load, dict):
+            continue
+        load = dict(load)
         number = _bulk_plan_load_number(load)
         if number in existing_by_number:
             raise ValueError(f"The stored Bulk Plan has duplicate load number '{number}'.")
-        existing_by_number[number] = index
+        existing_by_number[number] = load
 
     seen_incoming: set[str] = set()
+    merged: list[dict[str, Any]] = []
     for incoming in incoming_loads:
         load = dict(incoming)
         number = _bulk_plan_load_number(load)
         if number in seen_incoming:
             raise ValueError(f"The uploaded Bulk Plan has duplicate load number '{number}'.")
         seen_incoming.add(number)
-        existing_index = existing_by_number.get(number)
-        if existing_index is None:
+        current = existing_by_number.get(number)
+        if current is None:
             merged.append(load)
-            existing_by_number[number] = len(merged) - 1
             continue
 
-        current = merged[existing_index]
         # A file refresh owns plan details.  Preserve dashboard fields until
         # the Shipping status/notes API is introduced.
         refreshed = {**current, **load}
         for field in ("status", "notes", "updatedBy", "updatedAt"):
             if field in current:
                 refreshed[field] = current[field]
-        merged[existing_index] = refreshed
+        merged.append(refreshed)
+
+    # A full updated plan normally contains all active loads.  If a prior trip
+    # is absent, retain it after the current workbook order for history rather
+    # than silently deleting it.
+    merged.extend(load for number, load in existing_by_number.items() if number not in seen_incoming)
     return merged
 
 

@@ -1,5 +1,5 @@
 export type ProductionStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETE' | 'BLOCKED' | 'SKIPPED'
-export type LoadStatus = 'PLANNED' | 'SCHEDULED' | 'READY' | 'DELAYED' | 'LOADED' | 'IN_TRANSIT' | 'DELIVERED' | 'ISSUE'
+export type LoadStatus = 'PLANNED' | 'SCHEDULED' | 'READY' | 'DELAYED' | 'LOADED' | 'IN_TRANSIT' | 'DELIVERED' | 'ISSUE' | 'CANCELLED'
 export interface MachineTransfer { from: string; to: string; movedAt: string }
 export interface ProductionRecord { id: string; recordId?: string; sourceArea?: string; version?: number; week: string; market: string; jobNumber?: string; machine: string; scheduledMachine?: string; movedAt?: string; transferHistory?: MachineTransfer[]; tripNumbers?: string[]; zip: string; status: ProductionStatus; sourceStatus: string; volume: number; ir: string; queueOrder: number; notes?: string }
 export interface QueueMachinePlan { machine: string; expectedPackages: number; lhptGoal: number; availableCrew?: number }

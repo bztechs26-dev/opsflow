@@ -1,4 +1,4 @@
-"""Authenticated, exact-key production status updates."""
+"""Authenticated, exact-key operational status updates."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from dynamodb.operational_repository import OperationalRepository
 
 
 ALLOWED_STATUSES = {"NOT_STARTED", "IN_PROGRESS", "COMPLETE", "BLOCKED", "SKIPPED"}
+ALLOWED_SHIPPING_STATUSES = {"PLANNED", "SCHEDULED", "READY", "DELAYED", "LOADED", "IN_TRANSIT", "DELIVERED", "ISSUE", "CANCELLED"}
 
 
 def update_production_status(event: dict[str, Any]) -> dict[str, Any]:
@@ -45,6 +46,28 @@ def update_production_status(event: dict[str, Any]) -> dict[str, Any]:
             # The condition prevents UpdateItem from creating a row. The client
             # must refresh if it supplied a stale version or an unknown record.
             return _response(409, {"message": "This production record was not found or was changed by another user. Refresh and try again."})
+        raise
+
+
+def update_shipping_status(event: dict[str, Any]) -> dict[str, Any]:
+    """Persist a scheduler's status change for one exact Bulk Plan trip."""
+    try:
+        path = event.get("pathParameters") or {}
+        context = OperationalContext(os.environ["DEFAULT_ORGANIZATION_ID"], path.get("year"), path.get("week"))
+        load_number = str(path.get("loadNumber", "")).strip()
+        body = _json_body(event)
+        status = str(body.get("status", "")).upper()
+        if status not in ALLOWED_SHIPPING_STATUSES:
+            raise ValueError("status must be one of PLANNED, SCHEDULED, READY, DELAYED, LOADED, IN_TRANSIT, DELIVERED, ISSUE, or CANCELLED.")
+        claims = ((event.get("requestContext") or {}).get("authorizer") or {}).get("claims") or {}
+        updated_by = str(claims.get("sub") or claims.get("email") or "authenticated-user")
+        item = OperationalRepository().update_bulk_plan_status(context, load_number, status, updated_by)
+        return _response(200, item)
+    except (TypeError, ValueError) as error:
+        return _response(400, {"message": str(error)})
+    except Exception as error:
+        if _conditional_failure(error):
+            return _response(409, {"message": "This Bulk Plan load was changed by another user. Refresh and try again."})
         raise
 
 

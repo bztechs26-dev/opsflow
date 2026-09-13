@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { clearSession, fetchWeek, fetchWeeks, loadSession, operationalYear, type Session, updateProductionStatus as updateProductionStatusApi, uploadWorkbook } from './api/opsflow'
+import { clearSession, fetchWeek, fetchWeeks, loadSession, operationalYear, type Session, updateProductionStatus as updateProductionStatusApi, updateShippingStatus as updateShippingStatusApi, uploadWorkbook } from './api/opsflow'
 import { AppShell } from './components/AppShell'
 import { SignIn } from './components/SignIn'
 import { DashboardPage } from './pages/DashboardPage'
@@ -89,6 +89,25 @@ function OperationsApp({ session, onSignOut }: { session: Session; onSignOut: ()
     }
   }
 
+  const updateShippingStatus = async (id: string, status: string) => {
+    const load = week?.loads.find((item) => item.id === id)
+    if (!load) {
+      setMessage('This Shipping load is missing its trip identity. Refresh and try again.')
+      return
+    }
+    try {
+      const updated = await updateShippingStatusApi(week?.year ?? operationalYear, weekId, load.number, status, session.idToken)
+      setWeeks((items) => items.map((item) => item.id === weekId ? {
+        ...item,
+        loads: item.loads.map((current) => current.id === id ? { ...current, status: updated.status as typeof current.status } : current),
+      } : item))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not update Shipping status.'
+      setMessage(message)
+      throw error
+    }
+  }
+
   const content = page === 'projection'
     ? <ProjectionPage weeks={weeks} selectedWeekId={weekId} token={session.idToken} />
     : !week
@@ -96,7 +115,7 @@ function OperationsApp({ session, onSignOut }: { session: Session; onSignOut: ()
       : page === 'production'
         ? <ProductionPage records={week.productionRecords} queuePlan={week.queuePlan} onStatusChange={updateProductionStatus} onNotesChange={() => undefined} onQueuePlanChange={() => undefined} />
         : page === 'shipping'
-          ? <ShippingPage key={`${week.id}-${week.loads.length}`} loads={week.loads} />
+          ? <ShippingPage key={`${week.id}-${week.loads.length}`} loads={week.loads} onStatusChange={updateShippingStatus} />
           : <DashboardPage productionMetrics={metrics} loads={week.loads} records={week.productionRecords} />
 
   return <AppShell activePage={page} navigationItems={nav} onNavigate={setPage}>

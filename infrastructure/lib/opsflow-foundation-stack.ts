@@ -238,6 +238,16 @@ export class OpsflowFoundationStack extends cdk.Stack {
         authorizationType: apigateway.AuthorizationType.COGNITO,
         authorizer: apiAuthorizer,
       });
+    api.root
+      .addResource('shipping')
+      .addResource('{year}')
+      .addResource('{week}')
+      .addResource('{loadNumber}')
+      .addResource('status')
+      .addMethod('PATCH', new apigateway.LambdaIntegration(healthFunction), {
+        authorizationType: apigateway.AuthorizationType.COGNITO,
+        authorizer: apiAuthorizer,
+      });
 
     const webOriginAccessControl = new cloudfront.S3OriginAccessControl(this, 'WebOriginAccessControl');
     const wareCertificate = acm.Certificate.fromCertificateArn(

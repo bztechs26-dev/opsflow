@@ -74,6 +74,15 @@ export async function updateProductionStatus(year: number, week: string, area: s
   return data
 }
 
+export async function updateShippingStatus(year: number, week: string, loadNumber: string, status: string, token: string) {
+  const response = await request(`/shipping/${year}/${encodeURIComponent(week)}/${encodeURIComponent(loadNumber)}/status`, token, {
+    method: 'PATCH', body: JSON.stringify({ status }),
+  })
+  const data = await response.json() as { message?: string; number?: string; status?: string }
+  if (!response.ok) throw new Error(data.message ?? 'Could not update Shipping status.')
+  return data
+}
+
 function request(path: string, token: string, init: RequestInit = {}) {
   return fetch(`${apiBaseUrl}${path}`, {
     ...init,
