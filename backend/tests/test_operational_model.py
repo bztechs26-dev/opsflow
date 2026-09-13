@@ -25,7 +25,7 @@ from dynamodb.keys import (
     production_record_id,
 )
 from dynamodb.operational_repository import OperationalRepository, _bulk_plan_loads, _flatten_market_records
-from parsers.bulk_plan import _column_index, _load_from_values
+from parsers.bulk_plan import _apply_area_sheet_overrides, _column_index, _load_from_values
 
 
 class FakeTable:
@@ -246,6 +246,18 @@ class OperationalKeyTests(unittest.TestCase):
         self.assertEqual(closed["sourceStatus"], "Closed")
         self.assertEqual(closed["planState"], "CLOSED")
         self.assertEqual(closed["status"], "CANCELLED")
+
+    def test_bulk_plan_area_sheet_overrides_stale_data_sheet_details(self) -> None:
+        load = _load_from_values("36", {
+            "shipmentId": "100", "carrier": "Ryder", "destination": "Boston", "equipment": "53FT",
+            "weight": "10", "stops": "8", "sourceStatus": "Ready",
+        })
+        _apply_area_sheet_overrides(load, {
+            "carrier": "Delivery Now", "equipment": "45FT", "destination": "Boston", "weight": "10",
+            "stops": "8", "pickup": "", "sourceStatus": "Ready",
+        })
+        self.assertEqual(load["carrier"], "Delivery Now")
+        self.assertEqual(load["equipment"], "45FT")
 
     def test_week_control_is_one_compact_item(self) -> None:
         table = FakeTable()

@@ -93,7 +93,7 @@ def _parse_area_sheets(workbook: XlsxWorkbook, week: str, detail_loads: list[dic
             if route_role == "HUB_LINEHAUL" and "hub" not in text(destination).lower() and linehaul_count > 0:
                 route_role, saw_linehaul = "HUB_SPOKE", True
             detail = detail_by_shipment.get(number_value)
-            load = dict(detail) if detail else _load_from_values(week, {
+            area_values = {
                 "shipmentId": shipment,
                 "carrier": _column(row, headers, "Carrier"),
                 "equipment": _column(row, headers, "Equipment"),
@@ -102,7 +102,10 @@ def _parse_area_sheets(workbook: XlsxWorkbook, week: str, detail_loads: list[dic
                 "stops": _column(row, headers, "# of Stops"),
                 "pickup": _column(row, headers, "Pick release") or _column(row, headers, "Pick Release"),
                 "sourceStatus": _source_status(row, headers),
-            })
+            }
+            load = dict(detail) if detail else _load_from_values(week, area_values)
+            if detail:
+                _apply_area_sheet_overrides(load, area_values)
             load.update({"area": area, "routeGroup": route_group, "routeRole": route_role})
             grouped.append(load)
             if route_role == "HUB_LINEHAUL":
@@ -224,6 +227,43 @@ def _source_status(row: list[str], headers: list[str]) -> str:
         text(_column(row, headers, "Status", 1)),
         text(_column(row, headers, "8125_Status")),
     ]))
+
+
+def _apply_area_sheet_overrides(load: dict[str, Any], values: dict[str, object]) -> None:
+    """Refresh detail data with an operational area sheet's nonblank values.
+
+    Bulk Plans contain a Data detail sheet and operational Front End/Back End/
+    Solo sheets.  Planners commonly correct carrier or equipment in the
+    operational sheet before issuing a revised workbook.  Those corrections
+    must win over a stale value in Data for the same trip.
+    """
+    carrier = text(values.get("carrier"))
+    equipment = text(values.get("equipment"))
+    destination = text(values.get("destination"))
+    pickup = text(values.get("pickup"))
+    source_status = text(values.get("sourceStatus"))
+    if carrier:
+        load["carrier"] = carrier
+    if equipment:
+        load["equipment"] = equipment.replace("_", " ")
+    if destination:
+        load["destination"] = destination
+        load["destinationType"] = _destination_type(destination)
+    if pickup:
+        load["pickup"] = pickup
+
+    weight = text(values.get("weight"))
+    if weight:
+        weight_pounds = int(number(weight))
+        load["weightPounds"] = weight_pounds
+        load["weight"] = f"{weight_pounds:,} lb"
+    stops = text(values.get("stops"))
+    if stops:
+        load["stops"] = int(number(stops))
+    if source_status:
+        load["sourceStatus"] = source_status
+        load["planState"] = _plan_state(source_status)
+        load["status"] = _load_status(source_status)
 
 
 def _column(row: list[str], headers: list[str], name: str, occurrence: int = 0) -> str:
