@@ -191,7 +191,7 @@ class OperationalRepository:
         self._put_market_item({
             **key, "market": normalize_area(market),
             "productionSourceArea": normalize_area(market),
-            "productionSourceWeek": context.week - 1 if normalize_area(market) == "PROV-BOST" else context.week,
+            "productionSourceWeek": context.week,
             "mappings": merged,
         })
         return sum(len(atzs) for atzs in normalized.values())

@@ -25,6 +25,7 @@ from dynamodb.keys import (
     build_week_pk,
     production_record_id,
 )
+from parsers.projection import _projection_zip
 from dynamodb.operational_repository import OperationalRepository, _bulk_plan_loads, _flatten_market_records
 from parsers.bulk_plan import _apply_area_sheet_overrides, _column_index, _load_from_values
 
@@ -217,9 +218,13 @@ class OperationalKeyTests(unittest.TestCase):
         self.assertEqual(table.items[("2026-36", build_projection_mappings_sk("FE"))]["mappings"], {"100": ["07045"]})
         self.assertEqual(table.items[("2026-36", build_projection_mappings_sk("BE"))]["mappings"], {"200": ["07101"]})
         boston = table.items[("2026-36", build_projection_mappings_sk("PROV-BOST"))]
-        self.assertEqual(boston["productionSourceWeek"], 35)
+        self.assertEqual(boston["productionSourceWeek"], 36)
         repo._upsert_projection_mappings(self.week_36, "FE", {"101": ["07046"]})
         self.assertEqual(table.items[("2026-36", build_projection_mappings_sk("FE"))]["mappings"], {"100": ["07045"], "101": ["07046"]})
+
+    def test_projection_zip_padding_preserves_leading_zeroes(self) -> None:
+        self.assertEqual(_projection_zip("2113"), "02113")
+        self.assertEqual(_projection_zip("2114B1"), "02114B1")
 
     def test_bulk_plan_reimport_updates_trip_details_and_adds_only_new_trips(self) -> None:
         table = FakeTable()
