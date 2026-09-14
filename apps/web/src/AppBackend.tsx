@@ -137,7 +137,7 @@ function OperationsApp({ session, onSignOut }: { session: Session; onSignOut: ()
           ? <ShippingPage key={`${week.id}-${week.loads.length}`} loads={week.loads} onStatusChange={updateShippingStatus} onHubAssignmentChange={updateShippingHubAssignment} />
           : <DashboardPage productionMetrics={metrics} loads={week.loads} records={week.productionRecords} />
 
-  return <AppShell activePage={page} navigationItems={nav} onNavigate={setPage}>
+  return <AppShell activePage={page} navigationItems={nav} onNavigate={setPage} operationalWeek={week?.label}>
     <div className="week-controls">
       {weeks.length > 0 && <select className="week-select" value={weekId} onChange={(event) => setWeekId(event.target.value)}>{weeks.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select>}
       {(page === 'production' || page === 'shipping') && <button className="primary-button" onClick={() => { setUploadDomain(page === 'production' ? 'production' : 'bulk-plan'); setIsUploadOpen(true) }}>Upload {page === 'production' ? 'production' : 'Bulk Plan'}</button>}
