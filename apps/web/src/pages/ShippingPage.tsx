@@ -242,7 +242,7 @@ export function ShippingPage({
       <ShippingCharts loads={filtered} />
       <div className="shipping-workspace">
         <section className="panel table-wrap">
-          <div className="panel-header">
+          <div className="panel-header shipping-plan-header">
             <h2>
               {area === "ALL"
                 ? "Weekly load plan"
@@ -259,7 +259,6 @@ export function ShippingPage({
                 <th>Equipment</th>
                 <th>Weight</th>
                 <th>Stops</th>
-                <th>Pickup</th>
                 <th>Status</th>
                 <th>Dispatch timestamp</th>
               </tr>
@@ -280,7 +279,7 @@ export function ShippingPage({
                       <tr
                         className={`route-group-heading ${routeRoleClass(record)}`}
                       >
-                        <td colSpan={9}>
+                        <td colSpan={8}>
                           <strong>
                             {record.routeGroup ?? "Direct delivery"}
                           </strong>
@@ -371,7 +370,6 @@ export function ShippingPage({
                         <td>{record.equipment}</td>
                         <td>{record.weight}</td>
                         <td>{record.stops}</td>
-                        <td>{record.pickup}</td>
                         <td>
                           <StatusBadge status={record.status} />
                           <button
@@ -407,7 +405,6 @@ export function ShippingPage({
                             <td>{load.equipment}</td>
                             <td>{load.weight}</td>
                             <td>{load.stops}</td>
-                            <td>{load.pickup}</td>
                             <td><StatusBadge status={load.status} /></td>
                             <td>{formatDispatchTime(load.dispatchedAt)}</td>
                           </tr>
@@ -858,13 +855,13 @@ function printLoadPlan(title: string, loads: Load[]) {
       const heading =
         load.routeGroup !== prev?.routeGroup ||
         load.routeRole !== prev?.routeRole
-          ? `<tr class="group"><td colspan="9">${escapeHtml(`${load.area ? `${areaLabels[load.area] ?? load.area} · ` : ""}${load.routeGroup ?? "Direct delivery"} — ${routeRoleLabel(load)}`)}</td></tr>`
+          ? `<tr class="group"><td colspan="8">${escapeHtml(`${load.area ? `${areaLabels[load.area] ?? load.area} · ` : ""}${load.routeGroup ?? "Direct delivery"} — ${routeRoleLabel(load)}`)}</td></tr>`
           : "";
-      return `${heading}<tr><td>${escapeHtml(load.number)}</td><td>${escapeHtml(load.carrier)}</td><td>${escapeHtml(load.destination)}</td><td>${escapeHtml(load.destinationType ?? inferType(load.destination))}</td><td>${escapeHtml(load.equipment)}</td><td>${escapeHtml(load.weight)}</td><td>${load.stops}</td><td>${escapeHtml(load.pickup)}</td><td>${escapeHtml(formatStatus(load.status))}</td></tr>`;
+      return `${heading}<tr><td>${escapeHtml(load.number)}</td><td>${escapeHtml(load.carrier)}</td><td>${escapeHtml(load.destination)}</td><td>${escapeHtml(load.destinationType ?? inferType(load.destination))}</td><td>${escapeHtml(load.equipment)}</td><td>${escapeHtml(load.weight)}</td><td>${load.stops}</td><td>${escapeHtml(formatStatus(load.status))}</td></tr>`;
     })
     .join("");
   popup.document.write(
-    `<!doctype html><title>${escapeHtml(title)}</title><style>body{font-family:Arial;margin:24px;color:#172033}h1{font-size:20px}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #d8e0e8;padding:6px;text-align:left}th{background:#f1f5f9}.group td{background:#edf4fa;font-weight:700}@media print{thead{display:table-header-group}}</style><h1>${escapeHtml(title)}</h1><p>${loads.length} loads · OpsFlow</p><table><thead><tr><th>Load</th><th>Carrier</th><th>Destination</th><th>Type</th><th>Equipment</th><th>Weight</th><th>Stops</th><th>Pickup</th><th>Status</th></tr></thead><tbody>${body}</tbody></table><script>window.onload=()=>window.print()</script>`,
+    `<!doctype html><title>${escapeHtml(title)}</title><style>body{font-family:Arial;margin:24px;color:#172033}h1{font-size:20px}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #d8e0e8;padding:6px;text-align:left}th{background:#f1f5f9}.group td{background:#edf4fa;font-weight:700}@media print{thead{display:table-header-group}}</style><h1>${escapeHtml(title)}</h1><p>${loads.length} loads · OpsFlow</p><table><thead><tr><th>Load</th><th>Carrier</th><th>Destination</th><th>Type</th><th>Equipment</th><th>Weight</th><th>Stops</th><th>Status</th></tr></thead><tbody>${body}</tbody></table><script>window.onload=()=>window.print()</script>`,
   );
   popup.document.close();
 }
