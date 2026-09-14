@@ -212,8 +212,8 @@ def _load_status(source_status: str) -> str:
         return "LOADED"
     if "delay" in status:
         return "DELAYED"
-    if any(marker in status for marker in ("issue", "declin", "cancel")):
-        return "ISSUE"
+    if any(marker in status for marker in ("issue", "declin")):
+        return "DELAYED"
     if "stage" in status:
         return "STAGED"
     if "ready" in status or "accept" in status:

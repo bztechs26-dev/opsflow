@@ -12,7 +12,7 @@ from dynamodb.operational_repository import OperationalRepository
 
 
 ALLOWED_STATUSES = {"NOT_STARTED", "IN_PROGRESS", "COMPLETE", "BLOCKED", "SKIPPED"}
-ALLOWED_SHIPPING_STATUSES = {"NOT_STARTED", "STAGED", "DELAYED", "LOADED", "DISPATCHED", "ISSUE", "CLOSED"}
+ALLOWED_SHIPPING_STATUSES = {"NOT_STARTED", "STAGED", "DELAYED", "LOADED", "DISPATCHED", "CLOSED"}
 
 
 def update_production_status(event: dict[str, Any]) -> dict[str, Any]:
@@ -58,7 +58,7 @@ def update_shipping_status(event: dict[str, Any]) -> dict[str, Any]:
         body = _json_body(event)
         status = str(body.get("status", "")).upper()
         if status not in ALLOWED_SHIPPING_STATUSES:
-            raise ValueError("status must be one of NOT_STARTED, STAGED, DELAYED, LOADED, DISPATCHED, ISSUE, or CLOSED.")
+            raise ValueError("status must be one of NOT_STARTED, STAGED, DELAYED, LOADED, DISPATCHED, or CLOSED.")
         claims = ((event.get("requestContext") or {}).get("authorizer") or {}).get("claims") or {}
         updated_by = str(claims.get("sub") or claims.get("email") or "authenticated-user")
         item = OperationalRepository().update_bulk_plan_status(context, load_number, status, updated_by)

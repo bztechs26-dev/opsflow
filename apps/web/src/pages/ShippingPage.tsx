@@ -9,7 +9,6 @@ const statuses: LoadStatus[] = [
   "DELAYED",
   "LOADED",
   "DISPATCHED",
-  "ISSUE",
   "CLOSED",
 ];
 const areaLabels: Record<string, string> = {
@@ -210,10 +209,9 @@ export function ShippingPage({
           alert
         />
         <Metric
-          label="With issues"
-          value={String(count("ISSUE"))}
-          detail="Requires resolution"
-          alert
+          label="Loaded"
+          value={String(count("LOADED"))}
+          detail="Awaiting dispatch"
         />
       </div>
       <div className="shipping-filters">
@@ -702,14 +700,6 @@ function LoadDetails({
       <div className="detail-section">
         <strong>Operational notes</strong>
         <p>{load.notes ?? "No operational notes have been recorded."}</p>
-      </div>
-      <div
-        className={
-          load.issues ? "detail-section issue-detail" : "detail-section"
-        }
-      >
-        <strong>Issues</strong>
-        <p>{load.issues ?? "No active issues."}</p>
       </div>
     </aside>
   );
