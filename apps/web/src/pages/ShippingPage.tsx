@@ -258,7 +258,6 @@ export function ShippingPage({
                 <th>Load</th>
                 <th>Carrier</th>
                 <th>Destination</th>
-                <th>Type</th>
                 <th>Equipment</th>
                 <th>Weight</th>
                 <th>Stops</th>
@@ -283,7 +282,7 @@ export function ShippingPage({
                       <tr
                         className={`route-group-heading ${routeRoleClass(record)}`}
                       >
-                        <td colSpan={10}>
+                        <td colSpan={9}>
                           <strong>
                             {record.routeGroup ?? "Direct delivery"}
                           </strong>
@@ -371,10 +370,6 @@ export function ShippingPage({
                         </td>
                         <td>{record.carrier}</td>
                         <td>{record.destination}</td>
-                        <td>
-                          {record.destinationType ??
-                            inferType(record.destination)}
-                        </td>
                         <td>{record.equipment}</td>
                         <td>{record.weight}</td>
                         <td>{record.stops}</td>
@@ -411,7 +406,6 @@ export function ShippingPage({
                             <td>↳ {load.number}</td>
                             <td>{load.carrier}</td>
                             <td>{load.destination}</td>
-                            <td>{load.destinationType ?? inferType(load.destination)}</td>
                             <td>{load.equipment}</td>
                             <td>{load.weight}</td>
                             <td>{load.stops}</td>
@@ -575,7 +569,7 @@ function StatusDonut({
   );
 }
 function LoadTypeDonut({ loads }: { loads: Load[] }) {
-  const types = ["HUB", "DDU", "SCF"];
+  const types = ["HUB", "DDU", "SCF", "PCD"];
   const items = types
     .map((type) => ({
       type,
@@ -589,6 +583,7 @@ function LoadTypeDonut({ loads }: { loads: Load[] }) {
     HUB: "#47836b",
     DDU: "#4e81b8",
     SCF: "#7e71b8",
+    PCD: "#b26b37",
   };
   const segments = items
     .map((item, index) => {
@@ -777,6 +772,7 @@ function Metric({
   );
 }
 function inferType(destination: string) {
+  if (/pcd/i.test(destination)) return "PCD";
   if (/scf/i.test(destination)) return "SCF";
   if (/hub/i.test(destination)) return "HUB";
   return "DDU";

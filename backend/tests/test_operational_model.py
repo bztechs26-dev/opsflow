@@ -26,6 +26,7 @@ from dynamodb.keys import (
     production_record_id,
 )
 from parsers.projection import _projection_zip
+from parsers.bulk_plan import _destination_type
 from dynamodb.operational_repository import OperationalRepository, _bulk_plan_loads, _flatten_market_records
 from parsers.bulk_plan import _apply_area_sheet_overrides, _column_index, _load_from_values
 
@@ -226,6 +227,10 @@ class OperationalKeyTests(unittest.TestCase):
         self.assertEqual(_projection_zip("2113"), "02113")
         self.assertEqual(_projection_zip("2114B1"), "02114B1")
         self.assertEqual(_projection_zip("0"), "00000")
+
+    def test_shipping_destination_types_include_pcd_and_boston_globe_scf(self) -> None:
+        self.assertEqual(_destination_type("New Jersey PCD - Edison"), "PCD")
+        self.assertEqual(_destination_type("Manchester", "Hub & Spoke - Boston Globe RI NH MA"), "SCF")
 
     def test_bulk_plan_reimport_updates_trip_details_and_adds_only_new_trips(self) -> None:
         table = FakeTable()

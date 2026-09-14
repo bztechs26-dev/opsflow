@@ -106,7 +106,12 @@ def _parse_area_sheets(workbook: XlsxWorkbook, week: str, detail_loads: list[dic
             load = dict(detail) if detail else _load_from_values(week, area_values)
             if detail:
                 _apply_area_sheet_overrides(load, area_values)
-            load.update({"area": area, "routeGroup": route_group, "routeRole": route_role})
+            load.update({
+                "area": area,
+                "routeGroup": route_group,
+                "routeRole": route_role,
+                "destinationType": _destination_type(destination, route_group),
+            })
             grouped.append(load)
             if route_role == "HUB_LINEHAUL":
                 linehaul_count += 1
@@ -185,8 +190,13 @@ def _shipping_area(sheet_name: str) -> str | None:
     return None
 
 
-def _destination_type(destination: str) -> str:
+def _destination_type(destination: str, route_group: str = "") -> str:
     lowered = destination.lower()
+    group = route_group.lower()
+    if "pcd" in lowered:
+        return "PCD"
+    if "boston globe" in group and "ri nh ma" in group:
+        return "SCF"
     return "HUB" if "hub" in lowered else "SCF" if "scf" in lowered else "DDU"
 
 
