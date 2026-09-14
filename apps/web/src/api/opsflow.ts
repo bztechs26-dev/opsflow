@@ -34,17 +34,33 @@ export async function signIn(username: string, password: string): Promise<Sessio
 }
 
 export type WorkbookUpload = { importId: string; week?: number; area?: string }
+const supportedWorkbookExtension = /\.(xlsx|xlsm|xls|csv)$/i
+const standardizedWorkbookType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
 export async function uploadWorkbook(type: UploadType, file: File, token: string, operationalWeek?: number): Promise<WorkbookUpload> {
+  const workbook = await standardizeWorkbook(file)
   const response = await request(`/uploads/${type}`, token, {
     method: 'POST',
-    body: JSON.stringify({ operationalYear, operationalWeek, fileName: file.name, fileSize: file.size, contentType: file.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+    body: JSON.stringify({ operationalYear, operationalWeek, fileName: workbook.name, fileSize: workbook.size, contentType: standardizedWorkbookType }),
   })
   const data = await response.json() as { message?: string; uploadUrl?: string; importId?: string; week?: number; area?: string }
   if (!response.ok || !data.uploadUrl || !data.importId) throw new Error(data.message ?? 'Could not prepare the workbook upload.')
-  const upload = await fetch(data.uploadUrl, { method: 'PUT', headers: { 'content-type': file.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }, body: file })
+  const upload = await fetch(data.uploadUrl, { method: 'PUT', headers: { 'content-type': standardizedWorkbookType }, body: workbook })
   if (!upload.ok) throw new Error('The workbook could not be uploaded to S3.')
   return { importId: data.importId, week: data.week, area: data.area }
+}
+
+async function standardizeWorkbook(file: File): Promise<File> {
+  if (!supportedWorkbookExtension.test(file.name)) throw new Error('Use an .xlsx, .xlsm, .xls, or .csv file.')
+  if (file.name.toLowerCase().endsWith('.xlsx')) return file
+  try {
+    const source = XLSX.read(await file.arrayBuffer(), { type: 'array', raw: true })
+    const contents = XLSX.write(source, { bookType: 'xlsx', type: 'array' })
+    const name = file.name.replace(/\.(xlsm|xls|csv)$/i, '.xlsx')
+    return new File([contents], name, { type: standardizedWorkbookType })
+  } catch {
+    throw new Error('The selected file could not be read. Use a valid .xlsx, .xlsm, .xls, or .csv file.')
+  }
 }
 
 export async function fetchWeeks(token: string) {
@@ -102,3 +118,4 @@ function request(path: string, token: string, init: RequestInit = {}) {
     headers: { 'content-type': 'application/json', authorization: token, ...(init.headers ?? {}) },
   })
 }
+import * as XLSX from 'xlsx'
