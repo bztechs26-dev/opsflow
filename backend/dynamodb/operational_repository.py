@@ -184,6 +184,11 @@ class OperationalRepository:
         key = {"pk": build_markets_pk(context), "sk": build_projection_mappings_sk(market)}
         existing = self._table.get_item(Key=key).get("Item") or {}
         retained = existing.get("mappings", {}) if isinstance(existing.get("mappings", {}), dict) else {}
+        retained = {
+            str(trip): [str(zip_value) for zip_value in atzs if str(zip_value) != "00000"]
+            for trip, atzs in retained.items()
+            if str(trip).strip().lstrip("0") and isinstance(atzs, list)
+        }
         merged = {
             str(trip): sorted({*map(str, retained.get(str(trip), [])), *atzs})
             for trip, atzs in ({**retained, **normalized}).items()

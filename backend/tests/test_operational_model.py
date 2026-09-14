@@ -225,6 +225,7 @@ class OperationalKeyTests(unittest.TestCase):
     def test_projection_zip_padding_preserves_leading_zeroes(self) -> None:
         self.assertEqual(_projection_zip("2113"), "02113")
         self.assertEqual(_projection_zip("2114B1"), "02114B1")
+        self.assertEqual(_projection_zip("0"), "00000")
 
     def test_bulk_plan_reimport_updates_trip_details_and_adds_only_new_trips(self) -> None:
         table = FakeTable()

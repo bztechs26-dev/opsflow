@@ -23,7 +23,7 @@ def parse_projection(contents: bytes, week: str, file_name: str) -> dict[str, An
         for row in rows[header_index + 1:]:
             atz = _projection_zip(_value(row, 0))
             trip = text(_value(row, 2))
-            if not atz or not trip.isdigit():
+            if not atz or atz == "00000" or not trip.isdigit() or not trip.lstrip("0"):
                 continue
             mappings.setdefault(trip, set()).add(atz)
     if not mappings:
