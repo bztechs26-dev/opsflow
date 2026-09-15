@@ -14,8 +14,6 @@ const nav: NavigationItem[] = [
   { id: 'production', label: 'Production', icon: 'factory' },
   { id: 'shipping', label: 'Shipping', icon: 'truck' },
   { id: 'projection', label: 'Projection', icon: 'chart' },
-  { id: 'loads', label: 'Loads', icon: 'box' },
-  { id: 'reports', label: 'Reports', icon: 'chart' },
 ]
 type UploadDomain = 'production' | 'bulk-plan'
 

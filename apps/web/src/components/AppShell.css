@@ -5,3 +5,19 @@
 @media (max-width: 2000px) and (min-width: 761px) { .sidebar { width: 64px; flex-basis: 64px; }.brand { justify-content: center; padding: 19px 10px; }.brand > :last-child, .nav-item span, .nav-item small, .sidebar-footer > :not(.avatar) { display: none; }.nav-item { justify-content: center; padding: 11px; }.sidebar-footer { justify-content: center; padding: 15px 7px; }.topbar { padding: 0 22px; }main { max-width: none; width: 100%; padding: 22px; } }
 @media (max-width: 760px) { .sidebar { width: 58px; flex-basis: 58px; } }
 @media (min-width: 761px) { .sidebar { width: 172px; flex-basis: 172px; }.brand { justify-content: flex-start; padding: 19px 15px; }.brand > :last-child, .nav-item span, .nav-item small, .sidebar-footer > :not(.avatar) { display: block; }.nav-item { justify-content: flex-start; padding: 10px 8px; }.sidebar-footer { justify-content: flex-start; padding: 16px; } }
+.sidebar { position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+
+@media (max-width: 760px) {
+  .app-shell { display: block; }
+  .sidebar { position: sticky; z-index: 20; top: 0; width: 100%; height: auto; min-height: 58px; flex-basis: auto; flex-direction: row; align-items: stretch; overflow-x: auto; overflow-y: hidden; }
+  .brand { flex: 0 0 auto; padding: 15px 14px; border-bottom: 0; border-right: 1px solid rgb(255 255 255 / 10%); }
+  .brand-name { display: none; }
+  .sidebar nav { display: flex; flex: 1; gap: 5px; min-width: max-content; padding: 7px 8px; }
+  .nav-item, .nav-item:not(.active) { width: auto; min-height: 44px; justify-content: flex-start; padding: 8px 10px; font-size: 12px; white-space: nowrap; }
+  .nav-item span { display: inline; }
+  .nav-item svg { width: 17px; height: 17px; }
+  .sidebar-footer { display: none; }
+  .topbar { height: 60px; padding: 0 16px; }
+  .topbar-actions { gap: 9px; }
+  main { padding: 16px; }
+}

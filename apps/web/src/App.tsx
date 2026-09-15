@@ -15,7 +15,7 @@ import './App.css'
 const storageKey = 'opsflow.operational-weeks.v4'
 const bulkPlanParserVersion = 3
 const productionParserVersion = 2
-const nav: NavigationItem[] = [{ id: 'dashboard', label: 'Dashboard', icon: 'grid' }, { id: 'production', label: 'Production', icon: 'factory' }, { id: 'shipping', label: 'Shipping', icon: 'truck' }, { id: 'projection', label: 'Projection', icon: 'chart' }, { id: 'loads', label: 'Loads', icon: 'box' }, { id: 'reports', label: 'Reports', icon: 'chart' }]
+const nav: NavigationItem[] = [{ id: 'dashboard', label: 'Dashboard', icon: 'grid' }, { id: 'production', label: 'Production', icon: 'factory' }, { id: 'shipping', label: 'Shipping', icon: 'truck' }, { id: 'projection', label: 'Projection', icon: 'chart' }]
 type UploadDomain = 'production' | 'shipping'
 
 function App() {
