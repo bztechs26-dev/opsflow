@@ -93,7 +93,7 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
 
   const week = weeks.find((item) => item.id === weekId)
   const metrics = useMemo(() => ({
-    complete: week?.productionRecords.filter((record) => record.status === 'COMPLETE').length ?? 0,
+    complete: week?.productionRecords.filter((record) => record.status === 'COMPLETE' || record.status === 'BLOCKED').length ?? 0,
     total: week?.productionRecords.length ?? 0,
   }), [week])
 
@@ -120,14 +120,23 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
       setMessage('This production record is missing its operational identity. Refresh and try again.')
       return
     }
+    const priorStatus = record.status
+    // Reflect a confirmed clerk action at once; the API response below remains
+    // authoritative and replaces this value if needed.
+    setWeeks((items) => items.map((item) => item.id === weekId ? {
+      ...item, productionRecords: item.productionRecords.map((current) => current.id === id ? { ...current, status } : current),
+    } : item))
     try {
       const updated = await updateProductionStatusApi(
         week?.year ?? operationalYear, weekId, record.sourceArea, `record-${record.queueOrder}`, record.machine, record.zip, status, record.version, session.idToken,
       ) as { status: ProductionStatus; version?: number }
       setWeeks((items) => items.map((item) => item.id === weekId ? {
-        ...item, productionRecords: item.productionRecords.map((current) => current.id === id ? { ...current, status: updated.status, version: updated.version ?? current.version } : current),
+        ...item, productionRecords: item.productionRecords.map((current) => current.id === id ? { ...current, status: updated.status ?? status, version: updated.version ?? current.version } : current),
       } : item))
     } catch (error) {
+      setWeeks((items) => items.map((item) => item.id === weekId ? {
+        ...item, productionRecords: item.productionRecords.map((current) => current.id === id ? { ...current, status: priorStatus } : current),
+      } : item))
       const message = error instanceof Error ? error.message : 'Could not update production status.'
       setMessage(message)
       throw error

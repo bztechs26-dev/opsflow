@@ -13,7 +13,9 @@ export function capacityForMachine(machine: string, records: ProductionRecord[])
   const rate = machineRate(machine)
   if (!rate) return undefined
   const totalPieces = records.reduce((total, record) => total + record.volume, 0)
-  const completePieces = records.filter((record) => record.status === 'COMPLETE').reduce((total, record) => total + record.volume, 0)
+  // SHORT is represented by BLOCKED in stored data. Its available copies were
+  // still produced, so it counts as processed while staying a visible exception.
+  const completePieces = records.filter((record) => record.status === 'COMPLETE' || record.status === 'BLOCKED').reduce((total, record) => total + record.volume, 0)
   const blockedPieces = records.filter((record) => record.status === 'BLOCKED').reduce((total, record) => total + record.volume, 0)
   const skippedPieces = records.filter((record) => record.status === 'SKIPPED').reduce((total, record) => total + record.volume, 0)
   const runnablePieces = records.filter((record) => !['COMPLETE', 'BLOCKED', 'SKIPPED'].includes(record.status)).reduce((total, record) => total + record.volume, 0)
