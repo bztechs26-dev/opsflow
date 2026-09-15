@@ -641,7 +641,16 @@ function LoadDetails({
     setStatusAt(toLocalDateTimeInput(load.dispatchedAt ?? load.statusUpdatedAt));
   }, [load.id, load.status, load.dispatchedAt, load.statusUpdatedAt]);
   const tracksWarehouseTime = status === "LOADED" || status === "DISPATCHED";
-  const saveStatus = () => onStatusChange(status, tracksWarehouseTime && statusAt ? new Date(statusAt).toISOString() : undefined);
+  const changeStatus = (nextStatus: LoadStatus) => {
+    setStatus(nextStatus);
+    // No extra confirmation is needed in the normal workflow. The server
+    // assigns the current warehouse time when no correction is supplied.
+    onStatusChange(nextStatus);
+  };
+  const changeStatusTime = (value: string) => {
+    setStatusAt(value);
+    if (value) onStatusChange(status, new Date(value).toISOString());
+  };
   return (
     <aside className="panel load-details">
       <div className="panel-header">
@@ -665,7 +674,6 @@ function LoadDetails({
         <Detail label="Equipment" value={load.equipment} />
         <Detail label="Weight" value={load.weight} />
         <Detail label="Stops" value={String(load.stops)} />
-        <Detail label="Pickup" value={formatPickupTime(load.pickup)} />
         {(load.statusUpdatedAt || load.dispatchedAt) && <Detail label={load.status === "DISPATCHED" ? "Dispatched" : "Status time"} value={formatDispatchTime(load.dispatchedAt ?? load.statusUpdatedAt)} />}
       </dl>
       <label className="detail-status">
@@ -673,7 +681,7 @@ function LoadDetails({
         <select
           className="status-select"
           value={status}
-          onChange={(event) => setStatus(event.target.value as LoadStatus)}
+          onChange={(event) => changeStatus(event.target.value as LoadStatus)}
         >
           {statuses.map((status) => (
             <option key={status} value={status}>
@@ -684,10 +692,9 @@ function LoadDetails({
       </label>
       {tracksWarehouseTime && <label className="detail-status">
         {status === "DISPATCHED" ? "Actual dispatch time" : "Actual loaded time"}
-        <input className="status-select" type="datetime-local" value={statusAt} onChange={(event) => setStatusAt(event.target.value)} />
+        <input className="status-select" type="datetime-local" value={statusAt} onChange={(event) => changeStatusTime(event.target.value)} />
         <small>Use this when the status was entered after the load was already moved.</small>
       </label>}
-      <button className="primary-button detail-save-status" type="button" onClick={saveStatus}>Save status</button>
       {load.routeRole === "HUB_SPOKE" && (
         <label className="detail-status">
           Assign to hub trip
@@ -816,9 +823,6 @@ function formatDispatchTime(value: string | undefined) {
   if (!value) return "—";
   const date = new Date(value);
   return Number.isNaN(date.valueOf()) ? value : date.toLocaleString();
-}
-function formatPickupTime(value: string) {
-  return value.replace(/\s+America\/New_York\s*$/i, "").trim() || "—";
 }
 function toLocalDateTimeInput(value: string | undefined) {
   if (!value) return "";
