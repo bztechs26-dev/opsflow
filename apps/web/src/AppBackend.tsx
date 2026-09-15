@@ -133,7 +133,7 @@ function OperationsApp({ session, onSignOut }: { session: Session; onSignOut: ()
         ? <ProductionPage records={week.productionRecords} queuePlan={week.queuePlan} onStatusChange={updateProductionStatus} onNotesChange={() => undefined} onQueuePlanChange={() => undefined} />
         : page === 'shipping'
           ? <ShippingPage key={`${week.id}-${week.loads.length}`} loads={week.loads} onStatusChange={updateShippingStatus} onHubAssignmentChange={updateShippingHubAssignment} />
-          : <DashboardPage productionMetrics={metrics} loads={week.loads} records={week.productionRecords} onNavigate={setPage} />
+          : <DashboardPage productionMetrics={metrics} loads={week.loads} records={week.productionRecords} />
 
   return <AppShell activePage={page} navigationItems={nav} onNavigate={setPage} operationalWeek={week?.label}>
     <div className="week-controls">
