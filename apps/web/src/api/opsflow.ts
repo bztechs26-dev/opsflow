@@ -4,13 +4,19 @@ const cognitoRegion = 'us-east-1'
 const sessionKey = 'opsflow.cognito-session'
 export const operationalYear = Number(import.meta.env.VITE_OPSFLOW_OPERATIONAL_YEAR ?? '2026')
 
-export type Session = { idToken: string; expiresAt: number }
+export type Session = { idToken: string; refreshToken?: string; expiresAt: number; startedAt: number }
 type UploadType = 'production' | 'bulk-plan' | 'projection'
+type AuthenticationResult = { IdToken?: string; RefreshToken?: string; ExpiresIn?: number }
+let refreshInFlight: Promise<Session> | undefined
 
 export function loadSession(): Session | null {
   try {
     const value = JSON.parse(sessionStorage.getItem(sessionKey) ?? 'null') as Session | null
-    return value && value.expiresAt > Date.now() ? value : null
+    // A valid refresh token lets an expired ID token be renewed without
+    // interrupting an operator in the middle of a production shift.
+    return value && (value.expiresAt > Date.now() || value.refreshToken)
+      ? { ...value, startedAt: value.startedAt ?? Date.now() }
+      : null
   } catch { return null }
 }
 
@@ -22,15 +28,53 @@ export async function signIn(username: string, password: string): Promise<Sessio
     headers: { 'content-type': 'application/x-amz-json-1.1', 'x-amz-target': 'AWSCognitoIdentityProviderService.InitiateAuth' },
     body: JSON.stringify({ AuthFlow: 'USER_PASSWORD_AUTH', ClientId: cognitoClientId, AuthParameters: { USERNAME: username, PASSWORD: password } }),
   })
-  const data = await response.json() as { AuthenticationResult?: { IdToken?: string; ExpiresIn?: number }; __type?: string; message?: string; ChallengeName?: string }
+  const data = await response.json() as { AuthenticationResult?: AuthenticationResult; __type?: string; message?: string; ChallengeName?: string }
   const token = data.AuthenticationResult?.IdToken
   if (!response.ok || !token) {
     if (data.ChallengeName === 'NEW_PASSWORD_REQUIRED') throw new Error('Set a permanent password for this Cognito user, then sign in again.')
     throw new Error(data.message ?? data.__type ?? 'Sign-in failed.')
   }
-  const session = { idToken: token, expiresAt: Date.now() + (data.AuthenticationResult?.ExpiresIn ?? 3600) * 1000 }
-  sessionStorage.setItem(sessionKey, JSON.stringify(session))
+  const session = createSession(token, data.AuthenticationResult?.RefreshToken, data.AuthenticationResult?.ExpiresIn)
+  saveSession(session)
   return session
+}
+
+async function refreshSession(session: Session): Promise<Session> {
+  if (!session.refreshToken) throw new Error('Your session has expired. Please sign in again.')
+  if (refreshInFlight) return refreshInFlight
+  refreshInFlight = (async () => {
+    const response = await fetch(`https://cognito-idp.${cognitoRegion}.amazonaws.com/`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-amz-json-1.1', 'x-amz-target': 'AWSCognitoIdentityProviderService.InitiateAuth' },
+      body: JSON.stringify({ AuthFlow: 'REFRESH_TOKEN_AUTH', ClientId: cognitoClientId, AuthParameters: { REFRESH_TOKEN: session.refreshToken } }),
+    })
+    const data = await response.json() as { AuthenticationResult?: AuthenticationResult; __type?: string; message?: string }
+    const idToken = data.AuthenticationResult?.IdToken
+    if (!response.ok || !idToken) {
+      clearSession()
+      throw new Error(data.message ?? data.__type ?? 'Your session has expired. Please sign in again.')
+    }
+    const refreshed = createSession(idToken, data.AuthenticationResult?.RefreshToken ?? session.refreshToken, data.AuthenticationResult?.ExpiresIn, session.startedAt)
+    saveSession(refreshed)
+    return refreshed
+  })()
+  try { return await refreshInFlight }
+  finally { refreshInFlight = undefined }
+}
+
+function createSession(idToken: string, refreshToken: string | undefined, expiresIn: number | undefined, startedAt = Date.now()): Session {
+  return { idToken, refreshToken, expiresAt: Date.now() + (expiresIn ?? 3600) * 1000, startedAt }
+}
+
+function saveSession(session: Session) { sessionStorage.setItem(sessionKey, JSON.stringify(session)) }
+
+export async function continueSession(): Promise<Session> {
+  const current = loadSession()
+  if (!current) throw new Error('Your session has expired. Please sign in again.')
+  const refreshed = await refreshSession(current)
+  const continued = { ...refreshed, startedAt: Date.now() }
+  saveSession(continued)
+  return continued
 }
 
 export type WorkbookUpload = { importId: string; week?: number; area?: string }
@@ -112,10 +156,21 @@ export async function updateShippingHubAssignment(year: number, week: string, lo
   return data
 }
 
-function request(path: string, token: string, init: RequestInit = {}) {
-  return fetch(`${apiBaseUrl}${path}`, {
+async function request(path: string, token: string, init: RequestInit = {}) {
+  const send = (authorization: string) => fetch(`${apiBaseUrl}${path}`, {
     ...init,
-    headers: { 'content-type': 'application/json', authorization: token, ...(init.headers ?? {}) },
+    headers: { 'content-type': 'application/json', authorization, ...(init.headers ?? {}) },
   })
+  const stored = loadSession()
+  const authorization = stored && stored.expiresAt - Date.now() <= 120_000
+    ? (await refreshSession(stored)).idToken
+    : stored?.idToken ?? token
+  let response = await send(authorization)
+  // A request can begin just as Cognito expires its token. Refresh once and
+  // retry so normal operator activity never requires a page reload.
+  if ((response.status === 401 || response.status === 403) && stored?.refreshToken) {
+    response = await send((await refreshSession(stored)).idToken)
+  }
+  return response
 }
 import * as XLSX from 'xlsx'

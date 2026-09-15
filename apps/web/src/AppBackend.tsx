@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { clearSession, fetchWeek, fetchWeeks, loadSession, operationalYear, type Session, updateProductionStatus as updateProductionStatusApi, updateShippingHubAssignment as updateShippingHubAssignmentApi, updateShippingStatus as updateShippingStatusApi, uploadWorkbook } from './api/opsflow'
+import { clearSession, continueSession as continueSessionApi, fetchWeek, fetchWeeks, loadSession, operationalYear, type Session, updateProductionStatus as updateProductionStatusApi, updateShippingHubAssignment as updateShippingHubAssignmentApi, updateShippingStatus as updateShippingStatusApi, uploadWorkbook } from './api/opsflow'
 import { AppShell } from './components/AppShell'
 import { SignIn } from './components/SignIn'
 import { DashboardPage } from './pages/DashboardPage'
@@ -16,14 +16,18 @@ const nav: NavigationItem[] = [
   { id: 'projection', label: 'Projection', icon: 'chart' },
 ]
 type UploadDomain = 'production' | 'bulk-plan'
+const idleWarningMs = 60 * 60 * 1000
+const idleSignOutMs = 65 * 60 * 1000
+const shiftWarningMs = 11.75 * 60 * 60 * 1000
+const shiftSignOutMs = 12 * 60 * 60 * 1000
 
 export default function AppBackend() {
   const [session, setSession] = useState<Session | null>(loadSession)
   if (!session) return <SignIn onSuccess={setSession} />
-  return <OperationsApp session={session} onSignOut={() => { clearSession(); setSession(null) }} />
+  return <OperationsApp session={session} onSessionChange={setSession} onSignOut={() => { clearSession(); setSession(null) }} />
 }
 
-function OperationsApp({ session, onSignOut }: { session: Session; onSignOut: () => void }) {
+function OperationsApp({ session, onSessionChange, onSignOut }: { session: Session; onSessionChange: (session: Session) => void; onSignOut: () => void }) {
   const [page, setPage] = useState('dashboard')
   const [weeks, setWeeks] = useState<OperationalWeek[]>([])
   const [weekId, setWeekId] = useState('')
@@ -32,7 +36,50 @@ function OperationsApp({ session, onSignOut }: { session: Session; onSignOut: ()
   const [isUploading, setIsUploading] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [message, setMessage] = useState('')
+  const [sessionPrompt, setSessionPrompt] = useState<'idle' | 'shift' | null>(null)
+  const [sessionNow, setSessionNow] = useState(Date.now())
+  const [isContinuingSession, setIsContinuingSession] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
+  const lastActivityAt = useRef(Date.now())
+
+  useEffect(() => {
+    const noteActivity = () => {
+      lastActivityAt.current = Date.now()
+    }
+    window.addEventListener('pointerdown', noteActivity)
+    window.addEventListener('keydown', noteActivity)
+    window.addEventListener('touchstart', noteActivity)
+    const checkSession = () => {
+      const now = Date.now()
+      const idleFor = now - lastActivityAt.current
+      const shiftAge = now - session.startedAt
+      setSessionNow(now)
+      if (idleFor >= idleSignOutMs || shiftAge >= shiftSignOutMs) {
+        onSignOut()
+        return
+      }
+      if (idleFor >= idleWarningMs) setSessionPrompt('idle')
+      else if (shiftAge >= shiftWarningMs) setSessionPrompt('shift')
+    }
+    const interval = window.setInterval(checkSession, sessionPrompt ? 1000 : 15_000)
+    return () => {
+      window.removeEventListener('pointerdown', noteActivity)
+      window.removeEventListener('keydown', noteActivity)
+      window.removeEventListener('touchstart', noteActivity)
+      window.clearInterval(interval)
+    }
+  }, [onSignOut, session.startedAt, sessionPrompt])
+
+  const continueWorking = async () => {
+    setIsContinuingSession(true)
+    try {
+      onSessionChange(await continueSessionApi())
+      lastActivityAt.current = Date.now()
+      setSessionPrompt(null)
+    } catch {
+      onSignOut()
+    } finally { setIsContinuingSession(false) }
+  }
 
   const refresh = useCallback(async () => {
     const ids = await fetchWeeks(session.idToken)
@@ -145,7 +192,9 @@ function OperationsApp({ session, onSignOut }: { session: Session; onSignOut: ()
     {content}
     {isUploadOpen && <div className="modal-backdrop"><section className="upload-modal"><h2>Upload {uploadDomain === 'production' ? 'Production QA workbook' : 'Bulk Plan'}</h2><p>Use .xlsx, .xlsm, .xls, or .csv. Legacy files are standardized securely in the browser before processing.</p><label>Workbook<input ref={fileInput} type="file" accept=".xlsx,.xlsm,.xls,.csv" /></label><div><button className="secondary-button" onClick={() => setIsUploadOpen(false)} disabled={isUploading}>Cancel</button><button className="primary-button" onClick={() => void upload()} disabled={isUploading}>{isUploading ? 'Uploading...' : 'Upload workbook'}</button></div></section></div>}
     {isProcessing && <div className="processing-overlay" role="status" aria-live="polite"><section className="processing-card"><span className="processing-spinner" aria-hidden="true" /><div><h2>Preparing your operational data</h2><p>Your workbook is being validated and added to the dashboard. This page will update automatically.</p></div></section></div>}
+    {sessionPrompt && <div className="session-overlay" role="dialog" aria-modal="true" aria-labelledby="session-prompt-title"><section className="session-card"><span className="metric-label">Session check</span><h2 id="session-prompt-title">{sessionPrompt === 'idle' ? 'Still working?' : 'Continue your OpsFlow session?'}</h2><p>{sessionPrompt === 'idle' ? 'For your security, OpsFlow will sign you out after inactivity unless you confirm you are still working.' : 'Your operational shift is approaching its session limit. Continue working to renew your secure session.'}</p><strong className="session-countdown">{formatCountdown(sessionPrompt === 'idle' ? idleSignOutMs - (sessionNow - lastActivityAt.current) : shiftSignOutMs - (sessionNow - session.startedAt))}</strong><span className="session-countdown-label">until automatic sign out</span><div className="session-actions"><button className="secondary-button" type="button" onClick={onSignOut} disabled={isContinuingSession}>Sign out</button><button className="primary-button" type="button" onClick={() => void continueWorking()} disabled={isContinuingSession}>{isContinuingSession ? 'Continuing...' : 'Continue working'}</button></div></section></div>}
   </AppShell>
 }
 
 function delay(milliseconds: number) { return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds)) }
+function formatCountdown(milliseconds: number) { const seconds = Math.max(0, Math.ceil(milliseconds / 1000)); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}` }
