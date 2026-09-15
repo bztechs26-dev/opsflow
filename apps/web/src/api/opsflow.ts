@@ -138,11 +138,11 @@ export async function updateProductionStatus(year: number, week: string, area: s
   return data
 }
 
-export async function updateShippingStatus(year: number, week: string, loadNumber: string, status: string, token: string) {
+export async function updateShippingStatus(year: number, week: string, loadNumber: string, status: string, token: string, statusAt?: string) {
   const response = await request(`/shipping/${year}/${encodeURIComponent(week)}/${encodeURIComponent(loadNumber)}/status`, token, {
-    method: 'PATCH', body: JSON.stringify({ status }),
+    method: 'PATCH', body: JSON.stringify({ status, statusAt }),
   })
-  const data = await response.json() as { message?: string; number?: string; status?: string; dispatchedAt?: string | null }
+  const data = await response.json() as { message?: string; number?: string; status?: string; statusUpdatedAt?: string | null; dispatchedAt?: string | null }
   if (!response.ok) throw new Error(data.message ?? 'Could not update Shipping status.')
   return data
 }

@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+from datetime import datetime
 from typing import Any
 
 from dynamodb.keys import OperationalContext
@@ -59,9 +60,17 @@ def update_shipping_status(event: dict[str, Any]) -> dict[str, Any]:
         status = str(body.get("status", "")).upper()
         if status not in ALLOWED_SHIPPING_STATUSES:
             raise ValueError("status must be one of NOT_STARTED, STAGED, DELAYED, LOADED, DISPATCHED, or CLOSED.")
+        status_at = body.get("statusAt")
+        if status_at is not None:
+            if not isinstance(status_at, str) or not status_at.strip():
+                raise ValueError("statusAt must be an ISO-8601 date and time when provided.")
+            try:
+                datetime.fromisoformat(status_at.replace("Z", "+00:00"))
+            except ValueError as error:
+                raise ValueError("statusAt must be an ISO-8601 date and time when provided.") from error
         claims = ((event.get("requestContext") or {}).get("authorizer") or {}).get("claims") or {}
         updated_by = str(claims.get("sub") or claims.get("email") or "authenticated-user")
-        item = OperationalRepository().update_bulk_plan_status(context, load_number, status, updated_by)
+        item = OperationalRepository().update_bulk_plan_status(context, load_number, status, updated_by, status_at)
         return _response(200, item)
     except (TypeError, ValueError) as error:
         return _response(400, {"message": str(error)})

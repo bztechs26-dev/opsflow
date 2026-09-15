@@ -63,6 +63,8 @@ class FakeTable:
             if ":hub" in values:
                 item["loads"][row_index]["assignedHubTrip"] = values[":hub"]
             item["loads"][row_index]["updatedBy"] = values[":updatedBy"]
+            if ":statusUpdatedAt" in values:
+                item["loads"][row_index]["statusUpdatedAt"] = values[":statusUpdatedAt"]
             if ":dispatchedAt" in values:
                 item["loads"][row_index]["dispatchedAt"] = values[":dispatchedAt"]
         else:
@@ -264,11 +266,15 @@ class OperationalKeyTests(unittest.TestCase):
             {"id": "36-load-100", "number": "100", "carrier": "Ryder", "stops": 4, "status": "READY"},
             {"id": "36-load-101", "number": "101", "carrier": "Ryder", "stops": 4, "status": "READY"},
         ])
-        updated = repo.update_bulk_plan_status(self.week_36, "101", "DISPATCHED", "user-1")
+        actual_dispatch_time = "2026-09-14T23:00:00-04:00"
+        updated = repo.update_bulk_plan_status(self.week_36, "101", "DISPATCHED", "user-1", actual_dispatch_time)
         loads = table.items[("2026-36", build_bulk_plan_sk())]["loads"]
         self.assertEqual(updated["number"], "101")
         self.assertEqual(updated["status"], "DISPATCHED")
         self.assertIsNotNone(updated["dispatchedAt"])
+        self.assertIsNotNone(updated["statusUpdatedAt"])
+        self.assertEqual(updated["dispatchedAt"], actual_dispatch_time)
+        self.assertEqual(updated["statusUpdatedAt"], actual_dispatch_time)
         self.assertEqual(loads[0]["status"], "READY")
         self.assertEqual(loads[1]["status"], "DISPATCHED")
         self.assertEqual(loads[1]["updatedBy"], "user-1")

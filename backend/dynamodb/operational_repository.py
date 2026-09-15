@@ -317,7 +317,7 @@ class OperationalRepository:
         )["Attributes"]
         return {"status": updated[machine][row_index]["status"]}
 
-    def update_bulk_plan_status(self, context: OperationalContext, load_number: str, status: str, updated_by: str) -> dict[str, Any]:
+    def update_bulk_plan_status(self, context: OperationalContext, load_number: str, status: str, updated_by: str, status_at: str | None = None) -> dict[str, Any]:
         """Persist one Shipping load status without rewriting the weekly plan."""
         key = {"pk": build_markets_pk(context), "sk": build_bulk_plan_sk()}
         item = self._table.get_item(Key=key).get("Item")
@@ -330,13 +330,13 @@ class OperationalRepository:
         row_index = next((index for index, load in enumerate(loads) if isinstance(load, dict) and str(load.get("number") or "").strip() == normalized_number), None)
         if row_index is None:
             raise ValueError("The Bulk Plan load was not found.")
-        update_expression = f"SET #loads[{row_index}].#status = :status, #loads[{row_index}].#updatedBy = :updatedBy"
-        names = {"#loads": "loads", "#status": "status", "#number": "number", "#updatedBy": "updatedBy"}
-        values: dict[str, Any] = {":status": status, ":number": normalized_number, ":updatedBy": updated_by}
+        update_expression = f"SET #loads[{row_index}].#status = :status, #loads[{row_index}].#updatedBy = :updatedBy, #loads[{row_index}].#statusUpdatedAt = :statusUpdatedAt"
+        names = {"#loads": "loads", "#status": "status", "#number": "number", "#updatedBy": "updatedBy", "#statusUpdatedAt": "statusUpdatedAt"}
+        values: dict[str, Any] = {":status": status, ":number": normalized_number, ":updatedBy": updated_by, ":statusUpdatedAt": status_at or utc_now()}
         if status == "DISPATCHED":
             update_expression += f", #loads[{row_index}].#dispatchedAt = :dispatchedAt"
             names["#dispatchedAt"] = "dispatchedAt"
-            values[":dispatchedAt"] = utc_now()
+            values[":dispatchedAt"] = values[":statusUpdatedAt"]
         updated = self._table.update_item(
             Key=key,
             UpdateExpression=update_expression,
@@ -346,7 +346,7 @@ class OperationalRepository:
             ReturnValues="ALL_NEW",
         )["Attributes"]
         current = updated["loads"][row_index]
-        return {"number": normalized_number, "status": current["status"], "dispatchedAt": current.get("dispatchedAt")}
+        return {"number": normalized_number, "status": current["status"], "statusUpdatedAt": current.get("statusUpdatedAt"), "dispatchedAt": current.get("dispatchedAt")}
 
     def update_bulk_plan_hub_assignment(
         self, context: OperationalContext, spoke_number: str, hub_number: str | None, updated_by: str,
@@ -542,7 +542,7 @@ def _merge_bulk_plan_loads(existing_loads: list[dict[str, Any]], incoming_loads:
         # A file refresh owns plan details.  Preserve dashboard fields until
         # the Shipping status/notes API is introduced.
         refreshed = {**current, **load}
-        for field in ("status", "notes", "updatedBy", "updatedAt", "assignedHubTrip"):
+        for field in ("status", "notes", "updatedBy", "updatedAt", "statusUpdatedAt", "dispatchedAt", "assignedHubTrip"):
             if field in current:
                 refreshed[field] = current[field]
         merged.append(refreshed)

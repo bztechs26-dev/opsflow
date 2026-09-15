@@ -27,7 +27,7 @@ export function ShippingPage({
   onHubAssignmentChange,
 }: {
   loads: Load[];
-  onStatusChange?: (id: string, status: LoadStatus) => Promise<void>;
+  onStatusChange?: (id: string, status: LoadStatus, statusAt?: string) => Promise<void>;
   onHubAssignmentChange?: (id: string, hubTrip: string | undefined) => Promise<void>;
 }) {
   // This view is intentionally backed only by imported DynamoDB data.
@@ -440,8 +440,8 @@ export function ShippingPage({
                   load.routeRole === "HUB_LINEHAUL" &&
                   load.routeGroup === selected.routeGroup,
               )}
-              onStatusChange={(status) => {
-                const request = onStatusChange?.(selected.id, status);
+              onStatusChange={(status, statusAt) => {
+                const request = onStatusChange?.(selected.id, status, statusAt);
                 void request?.catch(() => undefined);
               }}
               onHubAssignmentChange={(hubTrip) => {
@@ -631,9 +631,17 @@ function LoadDetails({
 }: {
   load: Load;
   hubTrips: Load[];
-  onStatusChange: (status: LoadStatus) => void;
+  onStatusChange: (status: LoadStatus, statusAt?: string) => void;
   onHubAssignmentChange: (hubTrip: string | undefined) => void;
 }) {
+  const [status, setStatus] = useState<LoadStatus>(load.status);
+  const [statusAt, setStatusAt] = useState(() => toLocalDateTimeInput(load.dispatchedAt ?? load.statusUpdatedAt));
+  useEffect(() => {
+    setStatus(load.status);
+    setStatusAt(toLocalDateTimeInput(load.dispatchedAt ?? load.statusUpdatedAt));
+  }, [load.id, load.status, load.dispatchedAt, load.statusUpdatedAt]);
+  const tracksWarehouseTime = status === "LOADED" || status === "DISPATCHED";
+  const saveStatus = () => onStatusChange(status, tracksWarehouseTime && statusAt ? new Date(statusAt).toISOString() : undefined);
   return (
     <aside className="panel load-details">
       <div className="panel-header">
@@ -657,16 +665,15 @@ function LoadDetails({
         <Detail label="Equipment" value={load.equipment} />
         <Detail label="Weight" value={load.weight} />
         <Detail label="Stops" value={String(load.stops)} />
-        <Detail label="Pickup" value={load.pickup} />
-        <Detail label="Delivery" value={load.deliveryDate ?? "Not scheduled"} />
-        <Detail label="Dispatched" value={formatDispatchTime(load.dispatchedAt)} />
+        <Detail label="Pickup" value={formatPickupTime(load.pickup)} />
+        {(load.statusUpdatedAt || load.dispatchedAt) && <Detail label={load.status === "DISPATCHED" ? "Dispatched" : "Status time"} value={formatDispatchTime(load.dispatchedAt ?? load.statusUpdatedAt)} />}
       </dl>
       <label className="detail-status">
         Update status
         <select
           className="status-select"
-          value={load.status}
-          onChange={(event) => onStatusChange(event.target.value as LoadStatus)}
+          value={status}
+          onChange={(event) => setStatus(event.target.value as LoadStatus)}
         >
           {statuses.map((status) => (
             <option key={status} value={status}>
@@ -675,6 +682,12 @@ function LoadDetails({
           ))}
         </select>
       </label>
+      {tracksWarehouseTime && <label className="detail-status">
+        {status === "DISPATCHED" ? "Actual dispatch time" : "Actual loaded time"}
+        <input className="status-select" type="datetime-local" value={statusAt} onChange={(event) => setStatusAt(event.target.value)} />
+        <small>Use this when the status was entered after the load was already moved.</small>
+      </label>}
+      <button className="primary-button detail-save-status" type="button" onClick={saveStatus}>Save status</button>
       {load.routeRole === "HUB_SPOKE" && (
         <label className="detail-status">
           Assign to hub trip
@@ -694,10 +707,6 @@ function LoadDetails({
           </select>
         </label>
       )}
-      <div className="detail-section">
-        <strong>Operational notes</strong>
-        <p>{load.notes ?? "No operational notes have been recorded."}</p>
-      </div>
     </aside>
   );
 }
@@ -807,6 +816,16 @@ function formatDispatchTime(value: string | undefined) {
   if (!value) return "—";
   const date = new Date(value);
   return Number.isNaN(date.valueOf()) ? value : date.toLocaleString();
+}
+function formatPickupTime(value: string) {
+  return value.replace(/\s+America\/New_York\s*$/i, "").trim() || "—";
+}
+function toLocalDateTimeInput(value: string | undefined) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return "";
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.valueOf() - offset).toISOString().slice(0, 16);
 }
 type ExportFormat = "PDF" | "XLSX" | "CSV";
 function exportLoads(title: string, loads: Load[], format: ExportFormat) {

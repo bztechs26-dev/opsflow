@@ -143,17 +143,17 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
     }
   }
 
-  const updateShippingStatus = async (id: string, status: string) => {
+  const updateShippingStatus = async (id: string, status: string, statusAt?: string) => {
     const load = week?.loads.find((item) => item.id === id)
     if (!load) {
       setMessage('This Shipping load is missing its trip identity. Refresh and try again.')
       return
     }
     try {
-      const updated = await updateShippingStatusApi(week?.year ?? operationalYear, weekId, load.number, status, session.idToken)
+      const updated = await updateShippingStatusApi(week?.year ?? operationalYear, weekId, load.number, status, session.idToken, statusAt)
       setWeeks((items) => items.map((item) => item.id === weekId ? {
         ...item,
-        loads: item.loads.map((current) => current.id === id ? { ...current, status: updated.status as typeof current.status, dispatchedAt: updated.dispatchedAt ?? current.dispatchedAt } : current),
+        loads: item.loads.map((current) => current.id === id ? { ...current, status: updated.status as typeof current.status, statusUpdatedAt: updated.statusUpdatedAt ?? current.statusUpdatedAt, dispatchedAt: updated.dispatchedAt ?? current.dispatchedAt } : current),
       } : item))
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not update Shipping status.'
