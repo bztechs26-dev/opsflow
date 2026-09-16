@@ -149,19 +149,26 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
       setMessage('This production record is missing its operational identity. Refresh and try again.')
       return
     }
-    const updated = await moveProductionZipApi(
-      week?.year ?? operationalYear, weekId, record.sourceArea, `record-${record.queueOrder}`,
-      record.machine, record.zip, targetMachine, session.idToken,
-    )
-    setWeeks((items) => items.map((item) => item.id === weekId ? {
-      ...item,
-      productionRecords: item.productionRecords.map((current) => current.id === id ? {
-        ...current, machine: updated.machine ?? targetMachine,
-        scheduledMachine: updated.scheduledMachine ?? current.scheduledMachine,
-        movedAt: updated.movedAt ?? current.movedAt,
-        transferHistory: updated.transferHistory ?? current.transferHistory,
-      } : current),
-    } : item))
+    try {
+      const updated = await moveProductionZipApi(
+        week?.year ?? operationalYear, weekId, record.sourceArea, `record-${record.queueOrder}`,
+        record.machine, record.zip, targetMachine, session.idToken,
+      )
+      setWeeks((items) => items.map((item) => item.id === weekId ? {
+        ...item,
+        productionRecords: item.productionRecords.map((current) => current.id === id ? {
+          ...current, machine: updated.machine ?? targetMachine,
+          scheduledMachine: updated.scheduledMachine ?? current.scheduledMachine,
+          movedAt: updated.movedAt ?? current.movedAt,
+          transferHistory: updated.transferHistory ?? current.transferHistory,
+        } : current),
+      } : item))
+      setMessage(`${record.zip} moved from ${record.machine} to ${updated.machine ?? targetMachine}.`)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Could not move the ZIP to the selected machine.'
+      setMessage(detail)
+      throw error
+    }
   }
 
   const updateShippingStatus = async (id: string, status: string, statusAt?: string) => {
