@@ -53,7 +53,10 @@ class FakeTable:
         values = kwargs["ExpressionAttributeValues"]
         names = kwargs.get("ExpressionAttributeNames", {})
         machine = names.get("#machine")
-        if machine:
+        if "#source" in names:
+            item[names["#source"]] = values[":sourceRows"]
+            item[names["#target"]] = values[":targetRows"]
+        elif machine:
             row_index = int(kwargs["UpdateExpression"].split("[")[1].split("]")[0])
             item[machine][row_index]["status"] = values[":status"]
         elif "#loads" in names:
@@ -166,6 +169,42 @@ class OperationalKeyTests(unittest.TestCase):
         updated = table.items[(build_markets_pk(self.week_36), build_market_sk("FE"))]
         self.assertEqual(updated["A01"][0]["status"], "COMPLETE")
         self.assertEqual(updated["A01"][0]["qty"], 125)
+
+    def test_move_preserves_machine_assignment_and_history_on_reimport(self) -> None:
+        table = FakeTable()
+        repo = OperationalRepository(table=table)
+        records = [
+            {"sourceArea": "FE", "machine": "A01", "zip": "07960 F1", "volume": 100, "ir": "6:1", "jobNumber": "1082234", "market": "NNJ NSL"},
+            {"sourceArea": "FE", "machine": "A02", "zip": "08831 F1", "volume": 50, "ir": "2:1", "jobNumber": "1082235", "market": "NNJ NSL"},
+        ]
+        repo._upsert_market_area(self.week_36, records)
+        moved = repo.move_production_zip(self.week_36, "FE", "A01~07960 F1", "A02", "operator")
+        item_key = (build_markets_pk(self.week_36), build_market_sk("FE"))
+        item = table.items[item_key]
+        self.assertEqual(moved["machine"], "A02")
+        self.assertEqual([row["zip"] for row in item["A01"]], [])
+        moved_row = next(row for row in item["A02"] if row["zip"] == "07960 F1")
+        self.assertEqual(moved_row["scheduledMachine"], "A01")
+        self.assertEqual(moved_row["transferHistory"][-1]["from"], "A01")
+
+        repo._upsert_market_area(self.week_36, [{**records[0], "volume": 125}, records[1]])
+        updated = table.items[item_key]
+        retained = next(row for row in updated["A02"] if row["zip"] == "07960 F1")
+        self.assertEqual(retained["qty"], 125)
+        self.assertEqual(retained["scheduledMachine"], "A01")
+        self.assertEqual(retained["transferHistory"][-1]["to"], "A02")
+
+    def test_processed_zip_cannot_be_moved(self) -> None:
+        table = FakeTable()
+        repo = OperationalRepository(table=table)
+        repo._upsert_market_area(self.week_36, [
+            {"sourceArea": "FE", "machine": "A01", "zip": "07960 F1", "volume": 100, "ir": "6:1", "jobNumber": "1082234", "market": "NNJ NSL"},
+            {"sourceArea": "FE", "machine": "A02", "zip": "08831 F1", "volume": 50, "ir": "2:1", "jobNumber": "1082235", "market": "NNJ NSL"},
+        ])
+        key = (build_markets_pk(self.week_36), build_market_sk("FE"))
+        table.items[key]["A01"][0]["status"] = "COMPLETE"
+        with self.assertRaises(ValueError):
+            repo.move_production_zip(self.week_36, "FE", "A01~07960 F1", "A02", "operator")
 
     def test_compact_market_item_flattens_only_for_the_api_response(self) -> None:
         records = _flatten_market_records([{

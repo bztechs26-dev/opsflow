@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { clearSession, continueSession as continueSessionApi, fetchWeek, fetchWeeks, loadSession, operationalYear, type Session, updateProductionStatus as updateProductionStatusApi, updateShippingHubAssignment as updateShippingHubAssignmentApi, updateShippingStatus as updateShippingStatusApi, uploadWorkbook } from './api/opsflow'
+import { clearSession, continueSession as continueSessionApi, fetchWeek, fetchWeeks, loadSession, moveProductionZip as moveProductionZipApi, operationalYear, type Session, updateProductionStatus as updateProductionStatusApi, updateShippingHubAssignment as updateShippingHubAssignmentApi, updateShippingStatus as updateShippingStatusApi, uploadWorkbook } from './api/opsflow'
 import { AppShell } from './components/AppShell'
 import { SignIn } from './components/SignIn'
 import { DashboardPage } from './pages/DashboardPage'
@@ -143,6 +143,27 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
     }
   }
 
+  const moveProductionZip = async (id: string, targetMachine: string) => {
+    const record = week?.productionRecords.find((item) => item.id === id)
+    if (!record?.sourceArea) {
+      setMessage('This production record is missing its operational identity. Refresh and try again.')
+      return
+    }
+    const updated = await moveProductionZipApi(
+      week?.year ?? operationalYear, weekId, record.sourceArea, `record-${record.queueOrder}`,
+      record.machine, record.zip, targetMachine, session.idToken,
+    )
+    setWeeks((items) => items.map((item) => item.id === weekId ? {
+      ...item,
+      productionRecords: item.productionRecords.map((current) => current.id === id ? {
+        ...current, machine: updated.machine ?? targetMachine,
+        scheduledMachine: updated.scheduledMachine ?? current.scheduledMachine,
+        movedAt: updated.movedAt ?? current.movedAt,
+        transferHistory: updated.transferHistory ?? current.transferHistory,
+      } : current),
+    } : item))
+  }
+
   const updateShippingStatus = async (id: string, status: string, statusAt?: string) => {
     const load = week?.loads.find((item) => item.id === id)
     if (!load) {
@@ -186,7 +207,7 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
     : !week
       ? <section className="panel empty-page"><h2>No operational weeks loaded</h2><p>Upload a Production QA workbook or Bulk Plan to add an operational week.</p></section>
       : page === 'production'
-        ? <ProductionPage records={week.productionRecords} queuePlan={week.queuePlan} onStatusChange={updateProductionStatus} onNotesChange={() => undefined} onQueuePlanChange={() => undefined} />
+        ? <ProductionPage records={week.productionRecords} queuePlan={week.queuePlan} onStatusChange={updateProductionStatus} onMove={moveProductionZip} onNotesChange={() => undefined} onQueuePlanChange={() => undefined} />
         : page === 'shipping'
           ? <ShippingPage key={`${week.id}-${week.loads.length}`} loads={week.loads} onStatusChange={updateShippingStatus} onHubAssignmentChange={updateShippingHubAssignment} />
           : <DashboardPage productionMetrics={metrics} loads={week.loads} records={week.productionRecords} />

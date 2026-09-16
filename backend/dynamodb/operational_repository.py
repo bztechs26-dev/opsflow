@@ -131,24 +131,36 @@ class OperationalRepository:
         area = normalize_area(records[0]["sourceArea"])
         key = {"pk": build_markets_pk(context), "sk": build_market_sk(area)}
         existing = self._table.get_item(Key=key).get("Item") or {}
-        previous_statuses = _machine_zip_statuses(existing)
+        # A workbook always describes the scheduled machine, while operations
+        # may have reassigned a ZIP during the shift.  Preserve that clerk-owned
+        # allocation (and its history) when a corrected workbook is imported.
+        previous_rows = _scheduled_machine_zip_rows(existing)
         item: dict[str, Any] = dict(key)
         seen_zips: set[tuple[str, str]] = set()
         for record in records:
             machine = str(record.get("machine") or "Unassigned").strip() or "Unassigned"
+            scheduled_machine = str(record.get("scheduledMachine") or machine).strip() or machine
             zip_value = str(record["zip"])
-            identity = (machine, zip_value)
+            identity = (scheduled_machine, zip_value)
             if identity in seen_zips:
                 raise ValueError(f"Duplicate ZIP '{zip_value}' found in machine '{machine}' for {area}.")
             seen_zips.add(identity)
-            item.setdefault(machine, []).append({
+            previous = previous_rows.get(identity, {})
+            active_machine = str(previous.get("machine") or machine)
+            row = {
                 "zip": zip_value,
                 "qty": int(record.get("volume") or 0),
                 "ir": str(record.get("ir") or ""),
                 "job": str(record.get("jobNumber") or ""),
                 "market": str(record.get("market") or ""),
-                "status": previous_statuses.get(identity),
-            })
+                "scheduledMachine": scheduled_machine,
+                "status": previous.get("status"),
+            }
+            if previous.get("movedAt"):
+                row["movedAt"] = previous["movedAt"]
+            if previous.get("transferHistory"):
+                row["transferHistory"] = previous["transferHistory"]
+            item.setdefault(active_machine, []).append(row)
         self._put_market_item(item)
 
     def _upsert_bulk_plan(self, context: OperationalContext, loads: list[dict[str, Any]]) -> int:
@@ -317,6 +329,63 @@ class OperationalRepository:
         )["Attributes"]
         return {"status": updated[machine][row_index]["status"]}
 
+    def move_production_zip(self, context: OperationalContext, area: str, record_id: str, target_machine: str, updated_by: str) -> dict[str, Any]:
+        """Move an unfinished ZIP to another existing production machine.
+
+        Both machine lists live in one market item, allowing a single
+        conditional DynamoDB update to atomically remove the ZIP from its
+        current machine and add it to the destination machine.
+        """
+        area = normalize_area(area)
+        source_machine, zip_value = _market_record_identity(record_id)
+        target_machine = str(target_machine or "").strip()
+        if not target_machine:
+            raise ValueError("Choose the machine receiving this ZIP.")
+        if target_machine == source_machine:
+            raise ValueError("This ZIP is already assigned to that machine.")
+        key = {"pk": build_markets_pk(context), "sk": build_market_sk(area)}
+        item = self._table.get_item(Key=key).get("Item")
+        if not item:
+            raise ValueError("The production market was not found.")
+        source_rows = item.get(source_machine)
+        if not isinstance(source_rows, list):
+            raise ValueError("The current production machine was not found.")
+        row_index = next((index for index, row in enumerate(source_rows) if str(row.get("zip")) == zip_value), None)
+        if row_index is None:
+            raise ValueError("The production ZIP was not found.")
+        source_row = source_rows[row_index]
+        if str(source_row.get("status") or "NOT_STARTED") in {"COMPLETE", "BLOCKED"}:
+            raise ValueError("Processed ZIPs cannot be moved to another machine.")
+        target_rows = item.get(target_machine, [])
+        if not isinstance(target_rows, list):
+            raise ValueError("The receiving machine is invalid.")
+        if any(str(row.get("zip")) == zip_value for row in target_rows if isinstance(row, dict)):
+            raise ValueError("That ZIP is already assigned to the receiving machine.")
+        now = utc_now()
+        moved_row = dict(source_row)
+        moved_row["scheduledMachine"] = str(source_row.get("scheduledMachine") or source_machine)
+        moved_row["movedAt"] = now
+        history = list(source_row.get("transferHistory") or [])
+        history.append({"from": source_machine, "to": target_machine, "movedAt": now, "updatedBy": updated_by})
+        moved_row["transferHistory"] = history
+        updated_source_rows = [row for index, row in enumerate(source_rows) if index != row_index]
+        updated_target_rows = [*target_rows, moved_row]
+        updated = self._table.update_item(
+            Key=key,
+            UpdateExpression="SET #source = :sourceRows, #target = :targetRows",
+            ConditionExpression=f"attribute_exists(pk) AND #source[{row_index}].#zip = :zip",
+            ExpressionAttributeNames={"#source": source_machine, "#target": target_machine, "#zip": "zip"},
+            ExpressionAttributeValues={":sourceRows": updated_source_rows, ":targetRows": updated_target_rows, ":zip": zip_value},
+            ReturnValues="ALL_NEW",
+        )["Attributes"]
+        current = next(row for row in updated[target_machine] if str(row.get("zip")) == zip_value)
+        return {
+            "machine": target_machine,
+            "scheduledMachine": current.get("scheduledMachine"),
+            "movedAt": current.get("movedAt"),
+            "transferHistory": current.get("transferHistory", []),
+        }
+
     def update_bulk_plan_status(self, context: OperationalContext, load_number: str, status: str, updated_by: str, status_at: str | None = None) -> dict[str, Any]:
         """Persist one Shipping load status without rewriting the weekly plan."""
         key = {"pk": build_markets_pk(context), "sk": build_bulk_plan_sk()}
@@ -427,16 +496,17 @@ def _normalize_atz(value: object) -> str:
     return "".join(character for character in str(value or "").upper() if character.isalnum())
 
 
-def _machine_zip_statuses(item: dict[str, Any]) -> dict[tuple[str, str], Any]:
-    """Read retained clerk statuses from a prior machine-keyed area item."""
-    statuses: dict[tuple[str, str], Any] = {}
+def _scheduled_machine_zip_rows(item: dict[str, Any]) -> dict[tuple[str, str], dict[str, Any]]:
+    """Read retained clerk-owned state keyed by source machine and ZIP."""
+    rows_by_source: dict[tuple[str, str], dict[str, Any]] = {}
     for machine, rows in item.items():
         if machine in _MARKET_METADATA_FIELDS or not isinstance(rows, list):
             continue
         for row in rows:
             if isinstance(row, dict) and "zip" in row:
-                statuses[(machine, str(row["zip"]))] = row.get("status")
-    return statuses
+                scheduled = str(row.get("scheduledMachine") or machine)
+                rows_by_source[(scheduled, str(row["zip"]))] = {**row, "machine": machine}
+    return rows_by_source
 
 
 def _flatten_market_records(items: list[dict[str, Any]], context: OperationalContext) -> list[dict[str, Any]]:
@@ -464,7 +534,9 @@ def _flatten_market_records(items: list[dict[str, Any]], context: OperationalCon
                     "market": str(row.get("market") or area),
                     "jobNumber": str(row.get("job") or "") or None,
                     "machine": machine,
-                    "scheduledMachine": machine,
+                    "scheduledMachine": str(row.get("scheduledMachine") or machine),
+                    "movedAt": row.get("movedAt"),
+                    "transferHistory": row.get("transferHistory") or [],
                     "zip": zip_value,
                     # Null in DynamoDB means the clerk has not chosen a status.
                     # The UI renders that as NOT_STARTED without writing it back.

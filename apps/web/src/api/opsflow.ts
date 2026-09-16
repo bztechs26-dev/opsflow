@@ -138,6 +138,15 @@ export async function updateProductionStatus(year: number, week: string, area: s
   return data
 }
 
+export async function moveProductionZip(year: number, week: string, area: string, routeId: string, machine: string, zip: string, targetMachine: string, token: string) {
+  const response = await request(`/production/${year}/${encodeURIComponent(week)}/${encodeURIComponent(area)}/${encodeURIComponent(routeId)}/move`, token, {
+    method: 'PATCH', body: JSON.stringify({ machine, zip, targetMachine }),
+  })
+  const data = await response.json() as { message?: string; machine?: string; scheduledMachine?: string; movedAt?: string; transferHistory?: Array<{ from: string; to: string; movedAt: string }> }
+  if (!response.ok) throw new Error(data.message ?? 'Could not move the production ZIP.')
+  return data
+}
+
 export async function updateShippingStatus(year: number, week: string, loadNumber: string, status: string, token: string, statusAt?: string) {
   const response = await request(`/shipping/${year}/${encodeURIComponent(week)}/${encodeURIComponent(loadNumber)}/status`, token, {
     method: 'PATCH', body: JSON.stringify({ status, statusAt }),

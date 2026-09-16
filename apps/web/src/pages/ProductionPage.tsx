@@ -5,16 +5,18 @@ import './ProductionPage.css'
 
 const statuses: ProductionStatus[] = ['NOT_STARTED', 'IN_PROGRESS', 'COMPLETE', 'BLOCKED', 'SKIPPED']
 const areas = [{ id: 'ALL', label: 'All operations' }, { id: 'FE', label: 'Front End' }, { id: 'BE', label: 'Back End' }, { id: 'PROV-BOST', label: 'Providence / Boston' }, { id: 'MMSI', label: 'MMSI' }]
-interface Props { records: ProductionRecord[]; queuePlan?: QueuePlan; onStatusChange: (id: string, status: ProductionStatus) => void | Promise<void>; onNotesChange: (id: string, notes: string) => void; onQueuePlanChange: (plan: QueuePlan) => void }
+interface Props { records: ProductionRecord[]; queuePlan?: QueuePlan; onStatusChange: (id: string, status: ProductionStatus) => void | Promise<void>; onMove?: (id: string, machine: string) => void | Promise<void>; onNotesChange: (id: string, notes: string) => void; onQueuePlanChange: (plan: QueuePlan) => void }
 
-export function ProductionPage({ records, onStatusChange, onNotesChange }: Props) {
+export function ProductionPage({ records, onStatusChange, onMove, onNotesChange }: Props) {
   const [area, setArea] = useState('ALL')
   const [machine, setMachine] = useState('ALL')
   const [query, setQuery] = useState('')
   const [isMachineProgressOpen, setIsMachineProgressOpen] = useState(false)
   const [savingId, setSavingId] = useState<string | null>(null)
+  const [movingId, setMovingId] = useState<string | null>(null)
   const areaRecords = records.filter((record) => area === 'ALL' || recordArea(record) === area)
   const machines = useMemo(() => [...new Set(areaRecords.map((record) => record.machine))].filter((name) => machineRate(name) > 0).sort(), [areaRecords])
+  const allMachines = useMemo(() => [...new Set(records.map((record) => record.machine))].filter((name) => machineRate(name) > 0).sort(), [records])
   const normalizedQuery = query.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
   const visible = areaRecords.filter((record) => (machine === 'ALL' || record.machine === machine) && (!normalizedQuery || normalizeAtz(record.zip).includes(normalizedQuery)))
   const complete = visible.filter((record) => record.status === 'COMPLETE' || record.status === 'BLOCKED').length
@@ -28,6 +30,13 @@ export function ProductionPage({ records, onStatusChange, onNotesChange }: Props
       await onStatusChange(record.id, status)
     } catch { /* The application-level error message remains available on failure. */ }
     finally { setSavingId(null) }
+  }
+  const moveZip = async (record: ProductionRecord, targetMachine: string) => {
+    if (!onMove || targetMachine === record.machine) return
+    setMovingId(record.id)
+    try { await onMove(record.id, targetMachine) }
+    catch { /* The application-level error message remains available on failure. */ }
+    finally { setMovingId(null) }
   }
 
   return <section className="page">
@@ -43,6 +52,7 @@ export function ProductionPage({ records, onStatusChange, onNotesChange }: Props
     </section>
     <section className="panel machine-progress"><button className="machine-progress-toggle" type="button" aria-expanded={isMachineProgressOpen} aria-controls="machine-progress-details" onClick={() => setIsMachineProgressOpen((isOpen) => !isOpen)}><span><strong>Machine progress</strong><small>{machines.length} machines in this area</small></span><span className="toggle-label">{isMachineProgressOpen ? 'Hide details' : 'Show details'}<span aria-hidden="true">{isMachineProgressOpen ? '−' : '+'}</span></span></button>{isMachineProgressOpen && <div id="machine-progress-details" className="machine-grid">{machines.map((name) => <MachineCard key={name} name={name} records={areaRecords.filter((record) => record.machine === name)} />)}</div>}</section>
     {markets.map((market) => <section key={market} className="market-section"><div className="market-header"><h2>{market}</h2><span>{visible.filter((record) => record.market === market).length} ZIP records</span></div><div className="panel table-wrap"><table className="data-table"><thead><tr><th>ZIP / ATZ</th><th>Machine</th><th>Quantity</th><th>Job number</th><th>Dashboard status</th><th>Notes</th><th>Update status</th></tr></thead><tbody>{visible.filter((record) => record.market === market).map((record) => <tr key={record.id}><td>{record.zip}</td><td>{record.machine}</td><td>{record.volume.toLocaleString()} pcs</td><td>{record.jobNumber || '—'}</td><td><StatusBadge status={record.status}/></td><td><input className="notes-input" maxLength={100} placeholder="Add note" value={record.notes ?? ''} onChange={(event) => onNotesChange(record.id, event.target.value)} /></td><td><select className="status-select" value={record.status} disabled={savingId === record.id} onChange={(event) => void changeStatus(record, event.target.value as ProductionStatus)}>{statuses.map((status) => <option key={status} value={status}>{formatStatus(status)}</option>)}</select></td></tr>)}</tbody></table></div></section>)}
+    {onMove && <MoveZipPanel records={visible} machines={allMachines} movingId={movingId} onMove={moveZip} />}
     {!visible.length && <section className="panel empty-page"><h2>No ZIP / ATZ records found</h2><p>Try a different ZIP/ATZ search, machine, or operational-area filter.</p></section>}
   </section>
 }
@@ -52,3 +62,9 @@ function recordArea(record: ProductionRecord) { return record.sourceArea ?? (rec
 function normalizeAtz(value: string) { return value.toUpperCase().replace(/[^A-Z0-9]/g, '') }
 export function formatStatus(status: string) { return status === 'BLOCKED' ? 'SHORT' : status.replaceAll('_', ' ') }
 export function StatusBadge({ status }: { status: string }) { return <span className={`status ${status.toLowerCase()}`}>{formatStatus(status)}</span> }
+
+function MoveZipPanel({ records, machines, movingId, onMove }: { records: ProductionRecord[]; machines: string[]; movingId: string | null; onMove: (record: ProductionRecord, targetMachine: string) => Promise<void> }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const movable = records.filter((record) => !['COMPLETE', 'BLOCKED'].includes(record.status))
+  return <section className="panel machine-progress transfer-activity"><button className="machine-progress-toggle" type="button" aria-expanded={isOpen} aria-controls="move-zip-details" onClick={() => setIsOpen((open) => !open)}><span><strong>Move ZIPs between machines</strong><small>Reassign unfinished work. The new machine is used immediately in progress and projection.</small></span><span className="toggle-label">{isOpen ? 'Hide ZIPs' : `Move ${movable.length} ZIPs`}<span aria-hidden="true">{isOpen ? '−' : '+'}</span></span></button>{isOpen && <div id="move-zip-details" className="table-wrap"><table className="data-table"><thead><tr><th>ZIP / ATZ</th><th>Current machine</th><th>Quantity</th><th>Status</th><th>Move to machine</th></tr></thead><tbody>{movable.map((record) => <tr key={record.id} className={record.movedAt ? 'zip-moved-row' : ''}><td>{record.zip}{record.movedAt && <span className="moved-flag">MOVED</span>}</td><td>{record.machine}</td><td>{record.volume.toLocaleString()} pcs</td><td><StatusBadge status={record.status} /></td><td><select className="status-select" value={record.machine} disabled={movingId === record.id || machines.length < 2} aria-label={`Move ${record.zip} to another machine`} onChange={(event) => void onMove(record, event.target.value)}>{machines.map((machine) => <option key={machine} value={machine}>{machine}</option>)}</select></td></tr>)}</tbody></table>{!movable.length && <div className="empty-state"><h3>No ZIPs can be moved</h3><p>Processed ZIPs remain locked to protect completed production.</p></div>}</div>}</section>
+}

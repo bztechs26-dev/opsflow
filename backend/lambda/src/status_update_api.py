@@ -50,6 +50,32 @@ def update_production_status(event: dict[str, Any]) -> dict[str, Any]:
         raise
 
 
+def move_production_zip(event: dict[str, Any]) -> dict[str, Any]:
+    """Persist a clerk's reassignment of one active ZIP to another machine."""
+    try:
+        path = event.get("pathParameters") or {}
+        context = OperationalContext(os.environ["DEFAULT_ORGANIZATION_ID"], path.get("year"), path.get("week"))
+        area = str(path.get("area", ""))
+        body = _json_body(event)
+        machine = str(body.get("machine", "")).strip()
+        zip_value = str(body.get("zip", "")).strip()
+        target_machine = str(body.get("targetMachine", "")).strip()
+        if not machine or not zip_value:
+            raise ValueError("machine and ZIP are required.")
+        claims = ((event.get("requestContext") or {}).get("authorizer") or {}).get("claims") or {}
+        updated_by = str(claims.get("sub") or claims.get("email") or "authenticated-user")
+        item = OperationalRepository().move_production_zip(
+            context, area, f"{machine}~{zip_value}", target_machine, updated_by,
+        )
+        return _response(200, item)
+    except (TypeError, ValueError) as error:
+        return _response(400, {"message": str(error)})
+    except Exception as error:
+        if _conditional_failure(error):
+            return _response(409, {"message": "This production ZIP was changed by another user. Refresh and try again."})
+        raise
+
+
 def update_shipping_status(event: dict[str, Any]) -> dict[str, Any]:
     """Persist a scheduler's status change for one exact Bulk Plan trip."""
     try:
