@@ -3,7 +3,7 @@ import { clearSession, continueSession as continueSessionApi, fetchWeek, fetchWe
 import { AppShell } from './components/AppShell'
 import { SignIn } from './components/SignIn'
 import { DashboardPage } from './pages/DashboardPage'
-import { ProductionPage } from './pages/ProductionPage'
+import { ProductionPage } from './pages/ProductionPageNew'
 import { ProjectionPage } from './pages/ProjectionPage'
 import { ShippingPage } from './pages/ShippingPage'
 import type { NavigationItem, OperationalWeek, ProductionStatus } from './types/operations'
