@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { capacityForMachine, formatRunHours, machineRate } from '../data/machineCapacity'
+import { ProductionMoveControl } from '../components/ProductionMoveControl'
 import type { ProductionRecord, ProductionStatus, QueuePlan } from '../types/operations'
 import './ProductionPage.css'
 
@@ -40,7 +41,7 @@ export function ProductionPage({ records, onStatusChange, onMove, onNotesChange 
   }
 
   return <section className="page">
-    <div className="page-heading"><div><h1>Production</h1><p>Track ZIP-level production readiness by operational area and machine.</p></div></div>
+    <div className="page-heading"><div><h1>Production</h1><p>Track ZIP-level production readiness by operational area and machine.</p></div>{onMove && <ProductionMoveControl records={areaRecords} machines={allMachines} movingId={movingId} onMove={moveZip} />}</div>
     <div className="area-tabs">{areas.map((item) => <button key={item.id} className={area === item.id ? 'area-tab active' : 'area-tab'} onClick={() => { setArea(item.id); setMachine('ALL') }}>{item.label}<span>{item.id === 'ALL' ? records.length : records.filter((record) => recordArea(record) === item.id).length}</span></button>)}</div>
     <section className="production-sticky">
       <div className="production-summary">
@@ -52,7 +53,6 @@ export function ProductionPage({ records, onStatusChange, onMove, onNotesChange 
     </section>
     <section className="panel machine-progress"><button className="machine-progress-toggle" type="button" aria-expanded={isMachineProgressOpen} aria-controls="machine-progress-details" onClick={() => setIsMachineProgressOpen((isOpen) => !isOpen)}><span><strong>Machine progress</strong><small>{machines.length} machines in this area</small></span><span className="toggle-label">{isMachineProgressOpen ? 'Hide details' : 'Show details'}<span aria-hidden="true">{isMachineProgressOpen ? '−' : '+'}</span></span></button>{isMachineProgressOpen && <div id="machine-progress-details" className="machine-grid">{machines.map((name) => <MachineCard key={name} name={name} records={areaRecords.filter((record) => record.machine === name)} />)}</div>}</section>
     {markets.map((market) => <section key={market} className="market-section"><div className="market-header"><h2>{market}</h2><span>{visible.filter((record) => record.market === market).length} ZIP records</span></div><div className="panel table-wrap"><table className="data-table"><thead><tr><th>ZIP / ATZ</th><th>Machine</th><th>Quantity</th><th>Job number</th><th>Dashboard status</th><th>Notes</th><th>Update status</th></tr></thead><tbody>{visible.filter((record) => record.market === market).map((record) => <tr key={record.id}><td>{record.zip}</td><td>{record.machine}</td><td>{record.volume.toLocaleString()} pcs</td><td>{record.jobNumber || '—'}</td><td><StatusBadge status={record.status}/></td><td><input className="notes-input" maxLength={100} placeholder="Add note" value={record.notes ?? ''} onChange={(event) => onNotesChange(record.id, event.target.value)} /></td><td><select className="status-select" value={record.status} disabled={savingId === record.id} onChange={(event) => void changeStatus(record, event.target.value as ProductionStatus)}>{statuses.map((status) => <option key={status} value={status}>{formatStatus(status)}</option>)}</select></td></tr>)}</tbody></table></div></section>)}
-    {onMove && <MoveZipPanel records={visible} machines={allMachines} movingId={movingId} onMove={moveZip} />}
     {!visible.length && <section className="panel empty-page"><h2>No ZIP / ATZ records found</h2><p>Try a different ZIP/ATZ search, machine, or operational-area filter.</p></section>}
   </section>
 }
@@ -62,6 +62,8 @@ function recordArea(record: ProductionRecord) { return record.sourceArea ?? (rec
 function normalizeAtz(value: string) { return value.toUpperCase().replace(/[^A-Z0-9]/g, '') }
 export function formatStatus(status: string) { return status === 'BLOCKED' ? 'SHORT' : status.replaceAll('_', ' ') }
 export function StatusBadge({ status }: { status: string }) { return <span className={`status ${status.toLowerCase()}`}>{formatStatus(status)}</span> }
+
+export { MoveZipPanel }
 
 function MoveZipPanel({ records, machines, movingId, onMove }: { records: ProductionRecord[]; machines: string[]; movingId: string | null; onMove: (record: ProductionRecord, targetMachine: string) => Promise<void> }) {
   const [isOpen, setIsOpen] = useState(false)
