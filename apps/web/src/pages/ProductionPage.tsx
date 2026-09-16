@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { capacityForMachine, formatRunHours, machineRate } from '../data/machineCapacity'
-import { ProductionMoveControl } from '../components/ProductionMoveControl'
+import { InlineZipMoveControl } from '../components/InlineZipMoveControl'
 import type { ProductionRecord, ProductionStatus, QueuePlan } from '../types/operations'
 import './ProductionPage.css'
 
@@ -41,8 +41,9 @@ export function ProductionPage({ records, onStatusChange, onMove, onNotesChange 
   }
 
   return <section className="page">
-    <div className="page-heading"><div><h1>Production</h1><p>Track ZIP-level production readiness by operational area and machine.</p></div>{onMove && <ProductionMoveControl records={areaRecords} machines={allMachines} movingId={movingId} onMove={moveZip} />}</div>
+    <div className="page-heading"><div><h1>Production</h1><p>Track ZIP-level production readiness by operational area and machine.</p></div></div>
     <div className="area-tabs">{areas.map((item) => <button key={item.id} className={area === item.id ? 'area-tab active' : 'area-tab'} onClick={() => { setArea(item.id); setMachine('ALL') }}>{item.label}<span>{item.id === 'ALL' ? records.length : records.filter((record) => recordArea(record) === item.id).length}</span></button>)}</div>
+    {onMove && <InlineZipMoveControl records={areaRecords} machines={allMachines} movingId={movingId} onMove={moveZip} />}
     <section className="production-sticky">
       <div className="production-summary">
         <span><strong>{areas.find((item) => item.id === area)?.label}</strong></span><span><strong>{visible.length}</strong> ZIP records</span><span><strong>{complete}</strong> complete</span><span><strong>{visible.filter((record) => record.status === 'BLOCKED').length}</strong> short</span>
