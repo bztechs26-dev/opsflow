@@ -25,6 +25,10 @@ def update_production_status(event: dict[str, Any]) -> dict[str, Any]:
         status = str(body.get("status", "")).upper()
         if status not in ALLOWED_STATUSES:
             raise ValueError("status must be one of NOT_STARTED, IN_PROGRESS, COMPLETE, BLOCKED, or SKIPPED.")
+        notes = body.get("notes")
+        if notes is not None:
+            if not isinstance(notes, str) or len(notes) > 100:
+                raise ValueError("notes must be text up to 100 characters.")
         expected_version = body.get("version")
         if expected_version is not None:
             expected_version = int(expected_version)
@@ -37,7 +41,7 @@ def update_production_status(event: dict[str, Any]) -> dict[str, Any]:
         machine = str(body.get("machine", ""))
         zip_value = str(body.get("zip", ""))
         item = OperationalRepository().update_production_status(
-            context, area, f"{machine}~{zip_value}", status, updated_by, expected_version,
+            context, area, f"{machine}~{zip_value}", status, updated_by, expected_version, notes,
         )
         return _response(200, item)
     except (TypeError, ValueError) as error:

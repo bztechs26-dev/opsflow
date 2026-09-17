@@ -302,7 +302,7 @@ class OperationalRepository:
             "projectionRequirements": [item for item in items if item.get("entityType") == "PROJECTION"],
         }
 
-    def update_production_status(self, context: OperationalContext, area: str, record_id: str, status: str, updated_by: str, expected_version: int | None = None) -> dict[str, Any]:
+    def update_production_status(self, context: OperationalContext, area: str, record_id: str, status: str, updated_by: str, expected_version: int | None = None, notes: str | None = None) -> dict[str, Any]:
         area = normalize_area(area)
         machine, zip_value = _market_record_identity(record_id)
         key = {"pk": build_markets_pk(context), "sk": build_market_sk(area)}
@@ -317,17 +317,24 @@ class OperationalRepository:
             raise ValueError("The production ZIP was not found.")
         # Update just the nested status field.  The conditional ZIP check makes
         # sure a stale list position cannot update a different ZIP.
+        set_expression = f"#machine[{row_index}].#status = :status"
+        names = {"#machine": machine, "#status": "status", "#zip": "zip"}
+        values: dict[str, Any] = {":status": status, ":zip": zip_value}
+        if notes is not None:
+            set_expression += f", #machine[{row_index}].#notes = :notes"
+            names["#notes"] = "notes"
+            values[":notes"] = notes.strip()
         updated = self._table.update_item(
             Key=key,
             # DynamoDB requires a literal list index; expression placeholders
             # are valid for attribute names and values, not ``[index]``.
-            UpdateExpression=f"SET #machine[{row_index}].#status = :status",
+            UpdateExpression=f"SET {set_expression}",
             ConditionExpression=f"attribute_exists(pk) AND #machine[{row_index}].#zip = :zip",
-            ExpressionAttributeNames={"#machine": machine, "#status": "status", "#zip": "zip"},
-            ExpressionAttributeValues={":status": status, ":zip": zip_value},
+            ExpressionAttributeNames=names,
+            ExpressionAttributeValues=values,
             ReturnValues="ALL_NEW",
         )["Attributes"]
-        return {"status": updated[machine][row_index]["status"]}
+        return {"status": updated[machine][row_index]["status"], "notes": updated[machine][row_index].get("notes", "")}
 
     def move_production_zip(self, context: OperationalContext, area: str, record_id: str, target_machine: str, updated_by: str) -> dict[str, Any]:
         """Move an unfinished ZIP to another existing production machine.

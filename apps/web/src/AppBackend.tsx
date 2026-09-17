@@ -143,6 +143,14 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
     }
   }
 
+  const updateProductionNotes = (id: string, notes: string) => {
+    const record = week?.productionRecords.find((item) => item.id === id)
+    if (!record?.sourceArea) return
+    setWeeks((items) => items.map((item) => item.id === weekId ? { ...item, productionRecords: item.productionRecords.map((current) => current.id === id ? { ...current, notes } : current) } : item))
+    void updateProductionStatusApi(week?.year ?? operationalYear, weekId, record.sourceArea, `record-${record.queueOrder}`, record.machine, record.zip, record.status, record.version, session.idToken, notes)
+      .catch((error) => setMessage(error instanceof Error ? error.message : 'Could not save the production note.'))
+  }
+
   const moveProductionZip = async (id: string, targetMachine: string) => {
     const record = week?.productionRecords.find((item) => item.id === id)
     if (!record?.sourceArea) {
@@ -214,7 +222,7 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
     : !week
       ? <section className="panel empty-page"><h2>No operational weeks loaded</h2><p>Upload a Production QA workbook or Bulk Plan to add an operational week.</p></section>
       : page === 'production'
-        ? <ProductionPage records={week.productionRecords} queuePlan={week.queuePlan} onStatusChange={updateProductionStatus} onMove={moveProductionZip} onNotesChange={() => undefined} onQueuePlanChange={() => undefined} />
+        ? <ProductionPage records={week.productionRecords} queuePlan={week.queuePlan} onStatusChange={updateProductionStatus} onMove={moveProductionZip} onNotesChange={updateProductionNotes} onQueuePlanChange={() => undefined} />
         : page === 'shipping'
           ? <ShippingPage key={`${week.id}-${week.loads.length}`} loads={week.loads} onStatusChange={updateShippingStatus} onHubAssignmentChange={updateShippingHubAssignment} />
           : <DashboardPage productionMetrics={metrics} loads={week.loads} records={week.productionRecords} />
