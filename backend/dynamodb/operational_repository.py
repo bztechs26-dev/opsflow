@@ -279,7 +279,7 @@ class OperationalRepository:
 
     def projection_mappings(self, context: OperationalContext) -> list[dict[str, Any]]:
         markets: list[dict[str, Any]] = []
-        for market in ("FE", "BE", "PROV-BOST"):
+        for market in ("FE", "BE", "PROV-BOST", "MMSI"):
             item = self._table.get_item(Key={"pk": build_markets_pk(context), "sk": build_projection_mappings_sk(market)}).get("Item") or {}
             mappings = item.get("mappings", {})
             if isinstance(mappings, dict) and mappings:

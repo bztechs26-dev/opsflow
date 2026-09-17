@@ -25,6 +25,7 @@ from dynamodb.keys import (
     build_week_pk,
     production_record_id,
 )
+from parsers.common import projection_market_from_filename
 from parsers.projection import _projection_zip
 from parsers.bulk_plan import _destination_type
 from dynamodb.operational_repository import OperationalRepository, _bulk_plan_loads, _flatten_market_records
@@ -256,13 +257,18 @@ class OperationalKeyTests(unittest.TestCase):
         repo._upsert_projection_mappings(self.week_36, "FE", {"100": ["07045"]})
         repo._upsert_projection_mappings(self.week_36, "BE", {"200": ["07101"]})
         repo._upsert_projection_mappings(self.week_36, "PROV-BOST", {"300": ["02108"]})
-        self.assertEqual(len(repo.projection_mappings(self.week_36)), 3)
+        repo._upsert_projection_mappings(self.week_36, "MMSI", {"400": ["19104"]})
+        self.assertEqual(len(repo.projection_mappings(self.week_36)), 4)
         self.assertEqual(table.items[("2026-36", build_projection_mappings_sk("FE"))]["mappings"], {"100": ["07045"]})
         self.assertEqual(table.items[("2026-36", build_projection_mappings_sk("BE"))]["mappings"], {"200": ["07101"]})
         boston = table.items[("2026-36", build_projection_mappings_sk("PROV-BOST"))]
         self.assertEqual(boston["productionSourceWeek"], 36)
+        self.assertEqual(table.items[("2026-36", build_projection_mappings_sk("MMSI"))]["mappings"], {"400": ["19104"]})
         repo._upsert_projection_mappings(self.week_36, "FE", {"101": ["07046"]})
         self.assertEqual(table.items[("2026-36", build_projection_mappings_sk("FE"))]["mappings"], {"100": ["07045"], "101": ["07046"]})
+
+    def test_projection_filename_recognizes_mmsi_market(self) -> None:
+        self.assertEqual(projection_market_from_filename("MMSI Wk 38.xlsx"), "MMSI")
 
     def test_projection_zip_padding_preserves_leading_zeroes(self) -> None:
         self.assertEqual(_projection_zip("2113"), "02113")

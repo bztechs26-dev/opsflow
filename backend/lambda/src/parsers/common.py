@@ -98,6 +98,8 @@ def projection_market_from_filename(file_name: str) -> str:
         return "FE"
     if re.search(r"(?:^|[^A-Z0-9])BE(?:[^A-Z0-9]|$)|BACK[ _-]?END", name):
         return "BE"
+    if re.search(r"(?:^|[^A-Z0-9])MMSI(?:[^A-Z0-9]|$)", name):
+        return "MMSI"
     if any(marker in name for marker in ("BOST", "PROV", "HART")):
         return "PROV-BOST"
-    raise ValueError("Projection files must identify FE, BE, or Bost CT Hart in the filename.")
+    raise ValueError("Projection files must identify FE, BE, MMSI, or Bost CT Hart in the filename.")
