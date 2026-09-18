@@ -889,13 +889,16 @@ function printLoadPlan(title: string, loads: Load[]) {
         load.routeRole !== prev?.routeRole
           ? `<tr class="group"><td colspan="8">${escapeHtml(`${load.area ? `${areaLabels[load.area] ?? load.area} · ` : ""}${load.routeGroup ?? "Direct delivery"} — ${routeRoleLabel(load)}`)}</td></tr>`
           : "";
-      return `${heading}<tr><td>${escapeHtml(load.number)}</td><td>${escapeHtml(load.carrier)}</td><td>${escapeHtml(load.destination)}</td><td>${escapeHtml(load.destinationType ?? inferType(load.destination))}</td><td>${escapeHtml(load.equipment)}</td><td>${escapeHtml(load.weight)}</td><td>${load.stops}</td><td>${escapeHtml(formatStatus(load.status))}</td></tr>`;
+      return `${heading}<tr><td>${escapeHtml(load.number)}</td><td>${escapeHtml(load.carrier)}</td><td>${escapeHtml(load.destination)}</td><td>${escapeHtml(load.destinationType ?? inferType(load.destination))}</td><td>${escapeHtml(load.equipment)}</td><td>${escapeHtml(load.weight)}</td><td>${load.stops}</td><td>${escapeHtml(printScheduledDate(load.pickup))}</td><td>${escapeHtml(formatStatus(load.status))}</td></tr>`;
     })
     .join("");
   popup.document.write(
-    `<!doctype html><title>${escapeHtml(title)}</title><style>body{font-family:Arial;margin:24px;color:#172033}h1{font-size:20px}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #d8e0e8;padding:6px;text-align:left}th{background:#f1f5f9}.group td{background:#edf4fa;font-weight:700}@media print{thead{display:table-header-group}}</style><h1>${escapeHtml(title)}</h1><p>${loads.length} loads · OpsFlow</p><table><thead><tr><th>Load</th><th>Carrier</th><th>Destination</th><th>Type</th><th>Equipment</th><th>Weight</th><th>Stops</th><th>Status</th></tr></thead><tbody>${body}</tbody></table><script>window.onload=()=>window.print()</script>`,
+    `<!doctype html><title>${escapeHtml(title)}</title><style>body{font-family:Arial;margin:24px;color:#172033}h1{font-size:20px}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #d8e0e8;padding:6px;text-align:left}th{background:#f1f5f9}.group td{background:#edf4fa;font-weight:700}@media print{thead{display:table-header-group}}</style><h1>${escapeHtml(title)}</h1><p>${loads.length} loads · OpsFlow</p><table><thead><tr><th>Load</th><th>Carrier</th><th>Destination</th><th>Type</th><th>Equipment</th><th>Weight</th><th>Stops</th><th>Scheduled date</th><th>Status</th></tr></thead><tbody>${body}</tbody></table><script>window.onload=()=>window.print()</script>`,
   );
   popup.document.close();
+}
+function printScheduledDate(value: string) {
+  return value.replace(/\s+America\/New_York$/i, "").replace(/\s+00:01(?::00)?$/i, "") || "—";
 }
 function escapeHtml(value: string) {
   return value.replace(
