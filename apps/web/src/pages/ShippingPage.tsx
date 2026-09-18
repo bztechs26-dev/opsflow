@@ -872,6 +872,15 @@ function fileName(value: string) {
 function printLoadPlan(title: string, loads: Load[]) {
   const popup = window.open("", "_blank");
   if (!popup) return;
+  const printedAt = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date());
+  title = `${title} — Printed ${printedAt} ET`;
   const body = loads
     .map((load, index) => {
       const prev = loads[index - 1];
