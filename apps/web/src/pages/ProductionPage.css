@@ -18,8 +18,20 @@
   font-size: 13px;
 }
 
+.production-result-limit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 14px;
+  padding: 14px 16px;
+  color: #475467;
+  font-size: 13px;
+}
+
 
 @media (max-width: 960px) {
   .production-summary { flex-wrap: wrap; }
   .production-sticky .production-search { order: 2; flex: 1 1 260px; }
+  .production-result-limit { align-items: flex-start; flex-direction: column; }
 }

@@ -30,6 +30,7 @@ export default function AppBackend() {
 function OperationsApp({ session, onSessionChange, onSignOut }: { session: Session; onSessionChange: (session: Session) => void; onSignOut: () => void }) {
   const [page, setPage] = useState('dashboard')
   const [weeks, setWeeks] = useState<OperationalWeek[]>([])
+  const [weekOptions, setWeekOptions] = useState<string[]>([])
   const [weekId, setWeekId] = useState('')
   const [isUploadOpen, setIsUploadOpen] = useState(false)
   const [uploadDomain, setUploadDomain] = useState<UploadDomain>('production')
@@ -41,6 +42,8 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
   const [isContinuingSession, setIsContinuingSession] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const lastActivityAt = useRef(Date.now())
+  const weekIdRef = useRef('')
+  const loadedWeekIds = useRef(new Set<string>())
 
   useEffect(() => {
     const noteActivity = () => {
@@ -81,15 +84,37 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
     } finally { setIsContinuingSession(false) }
   }
 
-  const refresh = useCallback(async () => {
-    const ids = await fetchWeeks(session.idToken)
-    const values = await Promise.all(ids.map((id) => fetchWeek(id, session.idToken))) as OperationalWeek[]
-    const ordered = values.sort((left, right) => Number(left.id) - Number(right.id))
-    setWeeks(ordered)
-    setWeekId((current) => ordered.some((week) => week.id === current) ? current : ordered[0]?.id ?? '')
+  const loadWeek = useCallback(async (id: string, force = false) => {
+    if (!id || (!force && loadedWeekIds.current.has(id))) return
+    const loaded = await fetchWeek(id, session.idToken) as OperationalWeek
+    loadedWeekIds.current.add(id)
+    setWeeks((items) => [...items.filter((item) => item.id !== id), loaded].sort((left, right) => Number(left.id) - Number(right.id)))
   }, [session.idToken])
 
+  const refresh = useCallback(async () => {
+    const ids = await fetchWeeks(session.idToken)
+    const ordered = [...ids].sort((left, right) => Number(left) - Number(right))
+    setWeekOptions(ordered)
+    const selected = ordered.includes(weekIdRef.current) ? weekIdRef.current : ordered[0] ?? ''
+    if (selected !== weekIdRef.current) {
+      weekIdRef.current = selected
+      setWeekId(selected)
+    }
+    if (selected) await loadWeek(selected, true)
+  }, [loadWeek, session.idToken])
+
   useEffect(() => { void refresh().catch((error) => setMessage(error instanceof Error ? error.message : 'Could not load operations.')) }, [refresh])
+
+  const selectWeek = useCallback(async (selected: string) => {
+    weekIdRef.current = selected
+    setWeekId(selected)
+    try { await loadWeek(selected) }
+    catch (error) { setMessage(error instanceof Error ? error.message : 'Could not load the selected operational week.') }
+  }, [loadWeek])
+
+  const ensureWeeksLoaded = useCallback(async (ids: string[]) => {
+    await Promise.all([...new Set(ids)].filter(Boolean).map((id) => loadWeek(id)))
+  }, [loadWeek])
 
   const week = weeks.find((item) => item.id === weekId)
   const metrics = useMemo(() => ({
@@ -218,7 +243,7 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
   }
 
   const content = page === 'projection'
-    ? <ProjectionPage weeks={weeks} selectedWeekId={weekId} token={session.idToken} onDataChanged={refresh} />
+    ? <ProjectionPage weeks={weeks} availableWeekIds={weekOptions} selectedWeekId={weekId} token={session.idToken} onDataChanged={refresh} onWeekSelected={selectWeek} onEnsureWeeksLoaded={ensureWeeksLoaded} />
     : !week
       ? <section className="panel empty-page"><h2>No operational weeks loaded</h2><p>Upload a Production QA workbook or Bulk Plan to add an operational week.</p></section>
       : page === 'production'
@@ -229,7 +254,7 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
 
   return <AppShell activePage={page} navigationItems={nav} onNavigate={setPage} operationalWeek={week?.label}>
     <div className="week-controls">
-      {weeks.length > 0 && <select className="week-select" value={weekId} onChange={(event) => setWeekId(event.target.value)}>{weeks.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select>}
+      {weekOptions.length > 0 && <select className="week-select" value={weekId} onChange={(event) => void selectWeek(event.target.value)}>{weekOptions.map((id) => <option key={id} value={id}>Week {id}</option>)}</select>}
       {(page === 'production' || page === 'shipping') && <button className="primary-button" onClick={() => { setUploadDomain(page === 'production' ? 'production' : 'bulk-plan'); setIsUploadOpen(true) }}>Upload {page === 'production' ? 'production' : 'Bulk Plan'}</button>}
       <button className="secondary-button" onClick={onSignOut}>Sign out</button>
     </div>
