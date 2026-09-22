@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { clearSession, continueSession as continueSessionApi, fetchWeek, fetchWeeks, loadSession, moveProductionZip as moveProductionZipApi, operationalYear, type Session, updateProductionStatus as updateProductionStatusApi, updateShippingHubAssignment as updateShippingHubAssignmentApi, updateShippingStatus as updateShippingStatusApi, uploadWorkbook } from './api/opsflow'
 import { AppShell } from './components/AppShell'
 import { SignIn } from './components/SignIn'
@@ -117,10 +117,6 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
   }, [loadWeek])
 
   const week = weeks.find((item) => item.id === weekId)
-  const metrics = useMemo(() => ({
-    complete: week?.productionRecords.filter((record) => record.status === 'COMPLETE' || record.status === 'BLOCKED').length ?? 0,
-    total: week?.productionRecords.length ?? 0,
-  }), [week])
 
   const upload = async () => {
     const file = fileInput.current?.files?.[0]
