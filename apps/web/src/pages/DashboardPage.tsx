@@ -9,6 +9,7 @@ interface Props {
 
 const areaLabels: Record<string, string> = { FE: 'Front End', BE: 'Back End', 'PROV-BOST': 'Providence / Boston', MMSI: 'MMSI' }
 const areas = ['ALL', 'FE', 'BE', 'PROV-BOST', 'MMSI']
+const shippingAreaForProductionArea: Record<string, string> = { FE: 'FRONT_END', BE: 'BACK_END', 'PROV-BOST': 'PROVIDENCE_BOSTON', MMSI: 'MMSI' }
 
 export function DashboardPage({ loads, records }: Props) {
   const [area, setArea] = useState('ALL')
@@ -21,8 +22,9 @@ export function DashboardPage({ loads, records }: Props) {
   const areaProgress = area === 'ALL'
     ? areas.filter((key) => key !== 'ALL').map((key) => ({ ...progressFor(records.filter((record) => recordArea(record) === key)), key }))
     : [{ ...progressFor(visibleRecords), key: area }]
+  const visibleLoads = area === 'ALL' ? loads : loads.filter((load) => load.area === shippingAreaForProductionArea[area])
   const deliveryStatuses = ['NOT_STARTED', 'STAGED', 'LOADED', 'DISPATCHED', 'DELAYED', 'CLOSED'] as const
-  const deliverySummary = deliveryStatuses.map((status) => ({ status, count: loads.filter((load) => load.status === status).length }))
+  const deliverySummary = deliveryStatuses.map((status) => ({ status, count: visibleLoads.filter((load) => load.status === status).length }))
   const areaLabel = area === 'ALL' ? 'All operations' : areaLabels[area]
 
   return <section className="page">
@@ -33,7 +35,7 @@ export function DashboardPage({ loads, records }: Props) {
       </button>)}
     </div>
     <div className="metric-grid">
-      <Metric label="Total loads" value={String(loads.length)} detail="Imported from weekly Bulk Plan" />
+      <Metric label="Total loads" value={String(visibleLoads.length)} detail={`${areaLabel} loads from the weekly Bulk Plan`} />
       <Metric label={`${areaLabel} completion`} value={`${percent}%`} detail={`${completeHH.toLocaleString()} HH complete · ${visibleRecords.filter(isProcessed).length} ZIPs finished`} />
       <Metric label="HH remaining" value={(totalHH - completeHH).toLocaleString()} detail="Production quantity still running" />
       <Metric label="Machines" value={String(productionMachines.length)} detail={`${areaLabel} production machines; H1 review copies excluded`} />
