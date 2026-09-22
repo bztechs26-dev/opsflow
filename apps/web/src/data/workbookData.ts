@@ -52,7 +52,7 @@ function parseBulkAreaSheets(workbook: XLSX.WorkBook, week: string, detailLoads:
         const heading = text(row[0])
         if (heading) {
           if (heading.toLowerCase() === 'shared') { routeGroup = 'Shared direct delivery'; routeRole = 'SHARED'; sectionLines = [heading]; sawLinehaul = false; linehaulCount = 0 }
-          else { sectionLines = [...sectionLines, heading].slice(-2); const title = sectionLines.join(' — '); if (/hub\s*&?\s*spoke/i.test(title)) { routeGroup = title; routeRole = 'HUB_LINEHAUL'; sawLinehaul = false; linehaulCount = 0 } else if (!sawLinehaul) { routeGroup = title; routeRole = 'DIRECT' } }
+          else { sectionLines = [...sectionLines, heading].slice(-2); const title = sectionLines.join(' â€” '); if (/hub\s*&?\s*spoke/i.test(title)) { routeGroup = title; routeRole = 'HUB_LINEHAUL'; sawLinehaul = false; linehaulCount = 0 } else if (!sawLinehaul) { routeGroup = title; routeRole = 'DIRECT' } }
         } else if (routeRole === 'HUB_LINEHAUL' && linehaulCount > 0) { routeRole = 'HUB_SPOKE'; sawLinehaul = true }
         continue
       }
@@ -99,4 +99,4 @@ function text(value: unknown) { return String(value ?? '').trim() }
 export function zipKey(value: unknown) { const normalized = text(value).replace(/\s+/g, '').toUpperCase(); return /^\d{5}(?:[A-Z](?:\d+)?)?$/.test(normalized) ? normalized : '' }
 function isZip(value: string) { return /^\d{3,5}(?:\s+[A-Za-z](?:\d+)?)?$/.test(value) }
 function formatZip(value: string) { const [zip, suffix] = value.split(/\s+/, 2); return `${zip.padStart(5, '0')}${suffix ? ` ${suffix}` : ''}` }
-function normalize(status: string): ProductionStatus { switch (status.toLowerCase()) { case 'done': return 'COMPLETE'; case 'in process': return 'IN_PROGRESS'; case 'hold': case 'short': return 'BLOCKED'; default: return 'NOT_STARTED' } }
+function normalize(status: string): ProductionStatus { switch (status.toLowerCase()) { case 'done': return 'COMPLETE'; case 'hold': case 'short': return 'BLOCKED'; case 'skip': case 'skipped': return 'SKIPPED'; case 'rework': return 'REWORK'; default: return 'NOT_STARTED' } }

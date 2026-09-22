@@ -89,8 +89,6 @@ def _status(value: object) -> str:
     normalized = text(value).lower()
     if normalized == "done":
         return "COMPLETE"
-    if normalized == "in process":
-        return "IN_PROGRESS"
     if normalized in {"hold", "short"}:
         return "BLOCKED"
     return "NOT_STARTED"

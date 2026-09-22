@@ -3,7 +3,7 @@ import { capacityForMachine, formatRunHours, machineRate } from '../data/machine
 import type { ProductionRecord, ProductionStatus, QueuePlan } from '../types/operations'
 import './ProductionPage.css'
 
-const statuses: ProductionStatus[] = ['NOT_STARTED', 'IN_PROGRESS', 'COMPLETE', 'BLOCKED', 'SKIPPED']
+const statuses: ProductionStatus[] = ['NOT_STARTED', 'COMPLETE', 'BLOCKED', 'SKIPPED', 'REWORK']
 const initialRenderLimit = 200
 const renderLimitStep = 200
 const areas = [
@@ -98,5 +98,5 @@ function uniqueMachines(records: ProductionRecord[]) { return [...new Set(record
 function recordArea(record: ProductionRecord) { return record.sourceArea ?? (record.id.includes('-PROV-BOST-') ? 'PROV-BOST' : record.id.includes('-BE-') ? 'BE' : record.id.includes('-MMSI-') ? 'MMSI' : 'FE') }
 function normalizeAtz(value: string) { return value.toUpperCase().replace(/[^A-Z0-9]/g, '') }
 function isProcessed(record: ProductionRecord) { return record.status === 'COMPLETE' || record.status === 'BLOCKED' }
-function formatStatus(status: string) { return status === 'BLOCKED' ? 'SHORT' : status.replaceAll('_', ' ') }
+function formatStatus(status: string) { return status === 'BLOCKED' ? 'SHORT' : status === 'SKIPPED' ? 'SKIP' : status.replaceAll('_', ' ') }
 function StatusBadge({ status }: { status: string }) { return <span className={`status ${status.toLowerCase()}`}>{formatStatus(status)}</span> }

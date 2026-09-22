@@ -12,7 +12,7 @@ from dynamodb.keys import OperationalContext
 from dynamodb.operational_repository import OperationalRepository
 
 
-ALLOWED_STATUSES = {"NOT_STARTED", "IN_PROGRESS", "COMPLETE", "BLOCKED", "SKIPPED"}
+ALLOWED_STATUSES = {"NOT_STARTED", "COMPLETE", "BLOCKED", "SKIPPED", "REWORK"}
 ALLOWED_SHIPPING_STATUSES = {"NOT_STARTED", "STAGED", "DELAYED", "LOADED", "DISPATCHED", "CLOSED"}
 
 
@@ -24,7 +24,7 @@ def update_production_status(event: dict[str, Any]) -> dict[str, Any]:
         body = _json_body(event)
         status = str(body.get("status", "")).upper()
         if status not in ALLOWED_STATUSES:
-            raise ValueError("status must be one of NOT_STARTED, IN_PROGRESS, COMPLETE, BLOCKED, or SKIPPED.")
+            raise ValueError("status must be one of NOT_STARTED, COMPLETE, BLOCKED, SKIPPED, or REWORK.")
         notes = body.get("notes")
         if notes is not None:
             if not isinstance(notes, str) or len(notes) > 100:
