@@ -302,7 +302,7 @@ export function ShippingPage({
                                 })
                               }
                             >
-                              {hidden ? "+" : "−"}{" "}
+                              {hidden ? "+" : "âˆ’"}{" "}
                               {hidden
                                 ? `Show ${countRoleLoads(filtered, record)} spoke loads`
                                 : `Hide ${countRoleLoads(filtered, record)} spoke loads`}
@@ -361,7 +361,7 @@ export function ShippingPage({
                                 });
                               }}
                             >
-                              {expandedHubTrips.has(record.number) ? "−" : "+"}
+                              {expandedHubTrips.has(record.number) ? "âˆ’" : "+"}
                             </button>
                           )}
                         </td>
@@ -382,7 +382,7 @@ export function ShippingPage({
                               setDrawerOpen(true);
                             }}
                           >
-                            ›
+                            â€º
                           </button>
                         </td>
                         <td>{formatDispatchTime(record.dispatchedAt)}</td>
@@ -399,7 +399,7 @@ export function ShippingPage({
                         )
                         .map((load) => (
                           <tr className="assigned-spoke-row" key={`assigned-${record.id}-${load.id}`}>
-                            <td>↳ {load.number}</td>
+                            <td>â†³ {load.number}</td>
                             <td>{load.carrier}</td>
                             <td>{load.destination}</td>
                             <td>{load.equipment}</td>
@@ -431,7 +431,7 @@ export function ShippingPage({
               onClick={() => setDrawerOpen(false)}
               aria-label="Close load details"
             >
-              ×
+              Ã—
             </button>
             <LoadDetails
               load={selected}
@@ -461,38 +461,38 @@ function ShippingCharts({ loads }: { loads: Load[] }) {
     count: loads.filter((load) => load.status === status).length,
   }));
   const carriers = Object.entries(
-    loads.reduce<Record<string, number>>(
+    loads.reduce<Record<string, { total: number; dispatched: number }>>(
       (totals, load) => ({
         ...totals,
-        [load.carrier]: (totals[load.carrier] ?? 0) + weightValue(load.weight),
+        [load.carrier]: {
+          total: (totals[load.carrier]?.total ?? 0) + 1,
+          dispatched: (totals[load.carrier]?.dispatched ?? 0) + (load.status === "DISPATCHED" ? 1 : 0),
+        },
       }),
       {},
     ),
   )
-    .sort(([, a], [, b]) => b - a)
+    .sort(([, left], [, right]) => right.total - left.total)
     .slice(0, 5);
-  const largestWeight = carriers[0]?.[1] ?? 0;
   return (
     <div className="shipping-charts">
       <StatusDonut loads={loads} items={statusSummary} />
       <section className="panel chart-panel">
         <div className="panel-header">
-          <h2>Weight by carrier</h2>
-          <span>Top {carriers.length} in this view</span>
+          <h2>Loads by carrier</h2>
+          <span>Fill shows dispatched loads</span>
         </div>
         <div className="bar-chart">
-          {carriers.map(([carrier, weight]) => (
+          {carriers.map(([carrier, summary]) => (
             <div className="chart-row" key={carrier}>
               <div className="progress-label">
                 <span>{carrier}</span>
-                <strong>{formatWeight(weight)}</strong>
+                <strong>{summary.dispatched} / {summary.total} dispatched</strong>
               </div>
               <div className="progress-track">
                 <div
                   className="progress-fill shipping"
-                  style={{
-                    width: `${largestWeight ? (weight / largestWeight) * 100 : 0}%`,
-                  }}
+                  style={{ width: `${summary.total ? (summary.dispatched / summary.total) * 100 : 0}%` }}
                 />
               </div>
             </div>
@@ -708,7 +708,7 @@ function LoadDetails({
             <option value="">Not assigned</option>
             {hubTrips.map((hubTrip) => (
               <option key={hubTrip.id} value={hubTrip.number}>
-                {hubTrip.number} — {hubTrip.destination}
+                {hubTrip.number} â€” {hubTrip.destination}
               </option>
             ))}
           </select>
@@ -817,10 +817,10 @@ function weightValue(weight: string) {
   return Number(weight.replace(/[^\d.]/g, "")) || 0;
 }
 function formatWeight(weight: number) {
-  return weight ? `${Math.round(weight).toLocaleString()} lb` : "—";
+  return weight ? `${Math.round(weight).toLocaleString()} lb` : "â€”";
 }
 function formatDispatchTime(value: string | undefined) {
-  if (!value) return "—";
+  if (!value) return "â€”";
   const date = new Date(value);
   return Number.isNaN(date.valueOf()) ? value : date.toLocaleString();
 }
@@ -880,25 +880,25 @@ function printLoadPlan(title: string, loads: Load[]) {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date());
-  title = `${title} — Printed ${printedAt} ET`;
+  title = `${title} â€” Printed ${printedAt} ET`;
   const body = loads
     .map((load, index) => {
       const prev = loads[index - 1];
       const heading =
         load.routeGroup !== prev?.routeGroup ||
         load.routeRole !== prev?.routeRole
-          ? `<tr class="group"><td colspan="8">${escapeHtml(`${load.area ? `${areaLabels[load.area] ?? load.area} · ` : ""}${load.routeGroup ?? "Direct delivery"} — ${routeRoleLabel(load)}`)}</td></tr>`
+          ? `<tr class="group"><td colspan="8">${escapeHtml(`${load.area ? `${areaLabels[load.area] ?? load.area} Â· ` : ""}${load.routeGroup ?? "Direct delivery"} â€” ${routeRoleLabel(load)}`)}</td></tr>`
           : "";
       return `${heading}<tr><td>${escapeHtml(load.number)}</td><td>${escapeHtml(load.carrier)}</td><td>${escapeHtml(load.destination)}</td><td>${escapeHtml(load.destinationType ?? inferType(load.destination))}</td><td>${escapeHtml(load.equipment)}</td><td>${escapeHtml(load.weight)}</td><td>${load.stops}</td><td>${escapeHtml(printScheduledDate(load.pickup))}</td><td>${escapeHtml(formatStatus(load.status))}</td></tr>`;
     })
     .join("");
   popup.document.write(
-    `<!doctype html><title>${escapeHtml(title)}</title><style>body{font-family:Arial;margin:24px;color:#172033}h1{font-size:20px}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #d8e0e8;padding:6px;text-align:left}th{background:#f1f5f9}.group td{background:#edf4fa;font-weight:700}@media print{thead{display:table-header-group}}</style><h1>${escapeHtml(title)}</h1><p>${loads.length} loads · OpsFlow</p><table><thead><tr><th>Load</th><th>Carrier</th><th>Destination</th><th>Type</th><th>Equipment</th><th>Weight</th><th>Stops</th><th>Scheduled date</th><th>Status</th></tr></thead><tbody>${body}</tbody></table><script>window.onload=()=>window.print()</script>`,
+    `<!doctype html><title>${escapeHtml(title)}</title><style>body{font-family:Arial;margin:24px;color:#172033}h1{font-size:20px}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #d8e0e8;padding:6px;text-align:left}th{background:#f1f5f9}.group td{background:#edf4fa;font-weight:700}@media print{thead{display:table-header-group}}</style><h1>${escapeHtml(title)}</h1><p>${loads.length} loads Â· OpsFlow</p><table><thead><tr><th>Load</th><th>Carrier</th><th>Destination</th><th>Type</th><th>Equipment</th><th>Weight</th><th>Stops</th><th>Scheduled date</th><th>Status</th></tr></thead><tbody>${body}</tbody></table><script>window.onload=()=>window.print()</script>`,
   );
   popup.document.close();
 }
 function printScheduledDate(value: string) {
-  return value.replace(/\s+America\/New_York$/i, "").replace(/\s+00:01(?::00)?$/i, "") || "—";
+  return value.replace(/\s+America\/New_York$/i, "").replace(/\s+00:01(?::00)?$/i, "") || "â€”";
 }
 function escapeHtml(value: string) {
   return value.replace(
