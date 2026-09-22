@@ -250,7 +250,7 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
         ? <ProductionPage records={week.productionRecords} queuePlan={week.queuePlan} onStatusChange={updateProductionStatus} onMove={moveProductionZip} onNotesChange={updateProductionNotes} onQueuePlanChange={() => undefined} />
         : page === 'shipping'
           ? <ShippingPage key={`${week.id}-${week.loads.length}`} loads={week.loads} onStatusChange={updateShippingStatus} onHubAssignmentChange={updateShippingHubAssignment} />
-          : <DashboardPage productionMetrics={metrics} loads={week.loads} records={week.productionRecords} />
+          : <DashboardPage loads={week.loads} records={week.productionRecords} />
 
   return <AppShell activePage={page} navigationItems={nav} onNavigate={setPage} operationalWeek={week?.label}>
     <div className="week-controls">
