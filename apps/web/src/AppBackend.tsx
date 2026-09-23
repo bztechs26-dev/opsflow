@@ -246,8 +246,9 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
       await updateMachineRateApi(week?.year ?? operationalYear, weekId, machine, rate, session.idToken)
     } catch (error) {
       setWeeks((items) => items.map((item) => item.id === weekId ? {
-        ...item, machineRates: { ...(item.machineRates ?? {}), ...(previous === undefined ? {} : { [machine]: previous }) },
+        ...item, machineRates: (() => { const restored = { ...(item.machineRates ?? {}) }; if (previous === undefined) delete restored[machine]; else restored[machine] = previous; return restored })(),
       } : item))
+      setMessage(error instanceof Error ? error.message : 'Could not save the machine hourly rate.')
       throw error
     }
   }

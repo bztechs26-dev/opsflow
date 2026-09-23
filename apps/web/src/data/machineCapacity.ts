@@ -6,14 +6,14 @@ export function machineRate(machine: string, activeRate?: number) {
   if (activeRate && allowedMachineRates(machine).includes(activeRate)) return activeRate
   const normalized = machine.trim().toUpperCase()
   if (/^A\d+/.test(normalized) && normalized !== 'A05') return 10_000
-  if (/^(?:FERAG|F)\s*0?\d+/.test(normalized)) return 20_000
+  if (normalized.startsWith('F')) return 20_000
   return 0
 }
 
 export function allowedMachineRates(machine: string) {
   const normalized = machine.trim().toUpperCase()
   if (/^A\d+/.test(normalized) && normalized !== 'A05') return [10_000, 8_000, 6_000]
-  if (/^(?:FERAG|F)\s*0?\d+/.test(normalized)) return [20_000, 18_000, 16_000]
+  if (normalized.startsWith('F')) return [20_000, 18_000, 16_000]
   return []
 }
 

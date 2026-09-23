@@ -24,7 +24,7 @@ def update_machine_rate(event: dict[str, Any]) -> dict[str, Any]:
         body = _json_body(event)
         rate = int(body.get("rate", 0))
         normalized = machine.upper()
-        allowed_rates = {10_000, 8_000, 6_000} if normalized.startswith("A") else {20_000, 18_000, 16_000} if normalized.startswith(("F", "FERAG")) else set()
+        allowed_rates = {10_000, 8_000, 6_000} if normalized.startswith("A") else {20_000, 18_000, 16_000} if normalized.startswith("F") else set()
         if not machine or rate not in allowed_rates:
             raise ValueError("Choose an approved hourly rate for an Alpha or Ferag machine.")
         claims = ((event.get("requestContext") or {}).get("authorizer") or {}).get("claims") or {}
