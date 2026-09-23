@@ -16,6 +16,24 @@ ALLOWED_STATUSES = {"NOT_STARTED", "COMPLETE", "BLOCKED", "SKIPPED", "REWORK"}
 ALLOWED_SHIPPING_STATUSES = {"NOT_STARTED", "STAGED", "DELAYED", "LOADED", "DISPATCHED", "CLOSED"}
 
 
+def update_machine_rate(event: dict[str, Any]) -> dict[str, Any]:
+    try:
+        path = event.get("pathParameters") or {}
+        context = OperationalContext(os.environ["DEFAULT_ORGANIZATION_ID"], path.get("year"), path.get("week"))
+        machine = str(path.get("machine", "")).strip()
+        body = _json_body(event)
+        rate = int(body.get("rate", 0))
+        normalized = machine.upper()
+        allowed_rates = {10_000, 8_000, 6_000} if normalized.startswith("A") else {20_000, 18_000, 16_000} if normalized.startswith(("F", "FERAG")) else set()
+        if not machine or rate not in allowed_rates:
+            raise ValueError("Choose an approved hourly rate for an Alpha or Ferag machine.")
+        claims = ((event.get("requestContext") or {}).get("authorizer") or {}).get("claims") or {}
+        updated_by = str(claims.get("sub") or claims.get("email") or "authenticated-user")
+        return _response(200, OperationalRepository().update_machine_rate(context, machine, rate, updated_by))
+    except (TypeError, ValueError) as error:
+        return _response(400, {"message": str(error)})
+
+
 def update_production_status(event: dict[str, Any]) -> dict[str, Any]:
     try:
         path = event.get("pathParameters") or {}

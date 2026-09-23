@@ -2,15 +2,27 @@ import type { ProductionRecord } from '../types/operations'
 
 export type MachineCapacity = { machine: string; rate: number; totalPieces: number; completePieces: number; runnablePieces: number; blockedPieces: number; skippedPieces: number; estimatedHours?: number; percentComplete: number }
 
-export function machineRate(machine: string) {
+export function machineRate(machine: string, activeRate?: number) {
+  if (activeRate && allowedMachineRates(machine).includes(activeRate)) return activeRate
   const normalized = machine.trim().toUpperCase()
   if (/^A\d+/.test(normalized) && normalized !== 'A05') return 10_000
   if (/^(?:FERAG|F)\s*0?\d+/.test(normalized)) return 20_000
   return 0
 }
 
-export function capacityForMachine(machine: string, records: ProductionRecord[]): MachineCapacity | undefined {
-  const rate = machineRate(machine)
+export function allowedMachineRates(machine: string) {
+  const normalized = machine.trim().toUpperCase()
+  if (/^A\d+/.test(normalized) && normalized !== 'A05') return [10_000, 8_000, 6_000]
+  if (/^(?:FERAG|F)\s*0?\d+/.test(normalized)) return [20_000, 18_000, 16_000]
+  return []
+}
+
+export function formatMachineRate(rate: number) {
+  return `${Math.round(rate / 1000)}K`
+}
+
+export function capacityForMachine(machine: string, records: ProductionRecord[], activeRate?: number): MachineCapacity | undefined {
+  const rate = machineRate(machine, activeRate)
   if (!rate) return undefined
   const totalPieces = records.reduce((total, record) => total + record.volume, 0)
   // SHORT is represented by BLOCKED in stored data. Its available copies were

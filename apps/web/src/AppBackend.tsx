@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { clearSession, continueSession as continueSessionApi, fetchWeek, fetchWeeks, loadSession, moveProductionZip as moveProductionZipApi, operationalYear, type Session, updateProductionStatus as updateProductionStatusApi, updateShippingHubAssignment as updateShippingHubAssignmentApi, updateShippingStatus as updateShippingStatusApi, uploadWorkbook } from './api/opsflow'
+import { clearSession, continueSession as continueSessionApi, fetchWeek, fetchWeeks, loadSession, moveProductionZip as moveProductionZipApi, operationalYear, type Session, updateMachineRate as updateMachineRateApi, updateProductionStatus as updateProductionStatusApi, updateShippingHubAssignment as updateShippingHubAssignmentApi, updateShippingStatus as updateShippingStatusApi, uploadWorkbook } from './api/opsflow'
 import { AppShell } from './components/AppShell'
 import { SignIn } from './components/SignIn'
 import { DashboardPage } from './pages/DashboardPage'
@@ -237,6 +237,21 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
     }
   }
 
+  const updateMachineRate = async (machine: string, rate: number) => {
+    const previous = week?.machineRates?.[machine]
+    setWeeks((items) => items.map((item) => item.id === weekId ? {
+      ...item, machineRates: { ...(item.machineRates ?? {}), [machine]: rate },
+    } : item))
+    try {
+      await updateMachineRateApi(week?.year ?? operationalYear, weekId, machine, rate, session.idToken)
+    } catch (error) {
+      setWeeks((items) => items.map((item) => item.id === weekId ? {
+        ...item, machineRates: { ...(item.machineRates ?? {}), ...(previous === undefined ? {} : { [machine]: previous }) },
+      } : item))
+      throw error
+    }
+  }
+
   const updateShippingStatus = async (id: string, status: string, statusAt?: string) => {
     const load = week?.loads.find((item) => item.id === id)
     if (!load) {
@@ -280,10 +295,10 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
     : !week
       ? <section className="panel empty-page"><h2>No operational weeks loaded</h2><p>Upload a Production QA workbook or Bulk Plan to add an operational week.</p></section>
       : page === 'production'
-        ? <ProductionPage records={week.productionRecords} queuePlan={week.queuePlan} onStatusChange={updateProductionStatus} onMove={moveProductionZip} onNotesChange={updateProductionNotes} onQueuePlanChange={() => undefined} />
+        ? <ProductionPage records={week.productionRecords} queuePlan={week.queuePlan} machineRates={week.machineRates} onMachineRateChange={updateMachineRate} onStatusChange={updateProductionStatus} onMove={moveProductionZip} onNotesChange={updateProductionNotes} onQueuePlanChange={() => undefined} />
         : page === 'shipping'
           ? <ShippingPage key={`${week.id}-${week.loads.length}`} loads={week.loads} onStatusChange={updateShippingStatus} onHubAssignmentChange={updateShippingHubAssignment} />
-          : <DashboardPage loads={week.loads} records={week.productionRecords} />
+          : <DashboardPage loads={week.loads} records={week.productionRecords} machineRates={week.machineRates} />
 
   return <AppShell activePage={page} navigationItems={nav} onNavigate={navigate} operationalWeek={week?.label}>
     <div className="week-controls">

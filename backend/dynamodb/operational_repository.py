@@ -293,14 +293,34 @@ class OperationalRepository:
         # happens only in this API read model; it does not create child items.
         weekly_items = self._query_partition(build_markets_pk(context))
         items = self._query_partition(build_week_pk(context))
+        rate_item = next((item for item in items if item.get("entityType") == "MACHINE_RATES"), {})
+        machine_rates = {
+            str(machine): int(rate)
+            for machine, rate in (rate_item.get("rates") or {}).items()
+            if isinstance(rate, (int, float, Decimal))
+        }
         return {
             "id": str(context.week), "label": f"Week {context.week}", "organizationId": context.organization_id,
             "year": context.year, "week": context.week,
             "productionRecords": _flatten_market_records(weekly_items, context),
             "loads": _bulk_plan_loads(weekly_items),
+            "machineRates": machine_rates,
             "queuePlan": None,
             "projectionRequirements": [item for item in items if item.get("entityType") == "PROJECTION"],
         }
+
+    def update_machine_rate(self, context: OperationalContext, machine: str, rate: int, updated_by: str) -> dict[str, Any]:
+        """Persist the active rate used for all remaining work on one machine."""
+        key = {"pk": build_week_pk(context), "sk": "MACHINE_RATES"}
+        existing = self._table.get_item(Key=key).get("Item") or {}
+        rates = dict(existing.get("rates") or {})
+        rates[machine] = rate
+        now = utc_now()
+        self._table.put_item(Item={
+            **existing, **key, "entityType": "MACHINE_RATES", "rates": rates,
+            "updatedAt": now, "updatedBy": updated_by, "createdAt": existing.get("createdAt", now),
+        })
+        return {"machine": machine, "rate": rate, "updatedAt": now}
 
     def update_production_status(self, context: OperationalContext, area: str, record_id: str, status: str, updated_by: str, expected_version: int | None = None, notes: str | None = None) -> dict[str, Any]:
         area = normalize_area(area)

@@ -5,20 +5,21 @@ import { capacityForMachine, formatRunHours } from '../data/machineCapacity'
 interface Props {
   loads: Load[]
   records: ProductionRecord[]
+  machineRates?: Record<string, number>
 }
 
 const areaLabels: Record<string, string> = { FE: 'Front End', BE: 'Back End', 'PROV-BOST': 'Providence / Boston', MMSI: 'MMSI' }
 const areas = ['ALL', 'FE', 'BE', 'PROV-BOST', 'MMSI']
 const shippingAreaForProductionArea: Record<string, string> = { FE: 'FRONT_END', BE: 'BACK_END', 'PROV-BOST': 'PROVIDENCE_BOSTON', MMSI: 'MMSI' }
 
-export function DashboardPage({ loads, records }: Props) {
+export function DashboardPage({ loads, records, machineRates = {} }: Props) {
   const [area, setArea] = useState('ALL')
   const areaCounts = useMemo(() => Object.fromEntries(areas.filter((key) => key !== 'ALL').map((key) => [key, records.filter((record) => recordArea(record) === key).length])), [records])
   const visibleRecords = useMemo(() => area === 'ALL' ? records : records.filter((record) => recordArea(record) === area), [area, records])
   const totalHH = visibleRecords.reduce((sum, record) => sum + record.volume, 0)
   const completeHH = visibleRecords.filter(isProcessed).reduce((sum, record) => sum + record.volume, 0)
   const percent = totalHH ? Math.round((completeHH / totalHH) * 100) : 0
-  const productionMachines = Object.entries(groupBy(visibleRecords, (record) => record.machine)).filter(([machine, items]) => Boolean(capacityForMachine(machine, items)))
+  const productionMachines = Object.entries(groupBy(visibleRecords, (record) => record.machine)).filter(([machine, items]) => Boolean(capacityForMachine(machine, items, machineRates[machine])))
   const areaProgress = area === 'ALL'
     ? areas.filter((key) => key !== 'ALL').map((key) => ({ ...progressFor(records.filter((record) => recordArea(record) === key)), key }))
     : [{ ...progressFor(visibleRecords), key: area }]
@@ -44,12 +45,12 @@ export function DashboardPage({ loads, records }: Props) {
       <section className="panel chart-panel"><div className="panel-header"><h2>{area === 'ALL' ? 'Production completion by area' : `${areaLabel} production completion`}</h2><span>Completed household quantity</span></div><div className="bar-chart">{areaProgress.map(({ key, complete, total, percent: areaPercent }) => <ProgressBar key={key} label={areaLabels[key] ?? key} value={complete} total={total} percent={areaPercent} />)}</div></section>
       <section className="panel chart-panel"><div className="panel-header"><h2>Shipping delivery state</h2><span>All operations · {loads.length} planned loads</span></div><DeliveryDonut total={loads.length} items={deliverySummary} /></section>
     </div>
-    <section className="panel"><div className="panel-header"><h2>{areaLabel} machine capacity and progress</h2><span>Completion, runnable pieces, and projected run time by machine</span></div><div className="machine-grid">{productionMachines.sort(([a], [b]) => a.localeCompare(b)).map(([machine, items]) => <MachineCard key={machine} machine={machine} items={items} />)}</div>{!productionMachines.length && <p className="empty-area-message">No production records have been uploaded for {areaLabel} this week.</p>}</section>
+    <section className="panel"><div className="panel-header"><h2>{areaLabel} machine capacity and progress</h2><span>Completion, runnable pieces, and projected run time by machine</span></div><div className="machine-grid">{productionMachines.sort(([a], [b]) => a.localeCompare(b)).map(([machine, items]) => <MachineCard key={machine} machine={machine} items={items} activeRate={machineRates[machine]} />)}</div>{!productionMachines.length && <p className="empty-area-message">No production records have been uploaded for {areaLabel} this week.</p>}</section>
   </section>
 }
 
 function ProgressBar({ label, value, total, percent }: { label: string; value: number; total: number; percent: number }) { return <div className="chart-row"><div className="progress-label"><span>{label}</span><strong>{percent}%</strong></div><div className="progress-track"><div className="progress-fill" style={{ width: `${percent}%` }} /></div><div className="metric-detail">{value.toLocaleString()} of {total.toLocaleString()} HH complete</div></div> }
-function MachineCard({ machine, items }: { machine: string; items: ProductionRecord[] }) { const capacity = capacityForMachine(machine, items); if (!capacity) return null; const markets = [...new Set(items.filter((item) => !isProcessed(item)).map((item) => item.market))]; return <div className="machine-item"><div className="progress-label"><span>{machine}</span><strong>{capacity.percentComplete}%</strong></div><div className="progress-track"><div className="progress-fill" style={{ width: `${capacity.percentComplete}%` }} /></div><div className="metric-detail"><strong>{capacity.runnablePieces.toLocaleString()} pcs runnable</strong>{markets.length ? ` · ${markets.join(', ')}` : ' · Complete'}</div><div className="machine-runtime"><strong>{formatRunHours(capacity.estimatedHours)}</strong></div>{(capacity.blockedPieces > 0 || capacity.skippedPieces > 0) && <div className="machine-exceptions">{capacity.blockedPieces > 0 ? `${capacity.blockedPieces.toLocaleString()} pcs short` : ''}{capacity.blockedPieces > 0 && capacity.skippedPieces > 0 ? ' · ' : ''}{capacity.skippedPieces > 0 ? `${capacity.skippedPieces.toLocaleString()} pcs skipped` : ''}</div>}<div className="metric-detail">{capacity.completePieces.toLocaleString()} of {capacity.totalPieces.toLocaleString()} pcs complete</div></div> }
+function MachineCard({ machine, items, activeRate }: { machine: string; items: ProductionRecord[]; activeRate?: number }) { const capacity = capacityForMachine(machine, items, activeRate); if (!capacity) return null; const markets = [...new Set(items.filter((item) => !isProcessed(item)).map((item) => item.market))]; return <div className="machine-item"><div className="progress-label"><span>{machine}</span><strong>{capacity.percentComplete}%</strong></div><div className="progress-track"><div className="progress-fill" style={{ width: `${capacity.percentComplete}%` }} /></div><div className="metric-detail"><strong>{capacity.runnablePieces.toLocaleString()} pcs runnable</strong>{markets.length ? ` · ${markets.join(', ')}` : ' · Complete'}</div><div className="machine-runtime"><strong>{formatRunHours(capacity.estimatedHours)}</strong></div>{(capacity.blockedPieces > 0 || capacity.skippedPieces > 0) && <div className="machine-exceptions">{capacity.blockedPieces > 0 ? `${capacity.blockedPieces.toLocaleString()} pcs short` : ''}{capacity.blockedPieces > 0 && capacity.skippedPieces > 0 ? ' · ' : ''}{capacity.skippedPieces > 0 ? `${capacity.skippedPieces.toLocaleString()} pcs skipped` : ''}</div>}<div className="metric-detail">{capacity.completePieces.toLocaleString()} of {capacity.totalPieces.toLocaleString()} pcs complete</div></div> }
 function Metric({ label, value, detail }: { label: string; value: string; detail: string }) { return <section className="metric-card"><span className="metric-label">{label}</span><strong className="metric-value">{value}</strong><div className="metric-detail">{detail}</div></section> }
 function groupBy<T>(items: T[], key: (item: T) => string) { return items.reduce<Record<string, T[]>>((all, item) => ({ ...all, [key(item)]: [...(all[key(item)] ?? []), item] }), {}) }
 function progressFor(items: ProductionRecord[]) { const total = items.reduce((sum, item) => sum + item.volume, 0); const complete = items.filter(isProcessed).reduce((sum, item) => sum + item.volume, 0); return { total, complete, percent: total ? Math.round((complete / total) * 100) : 0 } }

@@ -227,10 +227,18 @@ export class OpsflowFoundationStack extends cdk.Stack {
       authorizationType: apigateway.AuthorizationType.COGNITO,
       authorizer: apiAuthorizer,
     });
-    const productionRecord = api.root
+    const productionWeek = api.root
       .addResource('production')
       .addResource('{year}')
-      .addResource('{week}')
+      .addResource('{week}');
+    productionWeek
+      .addResource('machine-rates')
+      .addResource('{machine}')
+      .addMethod('PATCH', new apigateway.LambdaIntegration(healthFunction), {
+        authorizationType: apigateway.AuthorizationType.COGNITO,
+        authorizer: apiAuthorizer,
+      });
+    const productionRecord = productionWeek
       .addResource('{area}')
       .addResource('{recordId}');
     productionRecord
