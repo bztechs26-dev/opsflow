@@ -103,12 +103,32 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
     if (selected) await loadWeek(selected, true)
   }, [loadWeek, session.idToken])
 
+  const refreshCurrentWeek = useCallback(async () => {
+    const selected = weekIdRef.current
+    if (selected) await loadWeek(selected, true)
+  }, [loadWeek])
+
   useEffect(() => { void refresh().catch((error) => setMessage(error instanceof Error ? error.message : 'Could not load operations.')) }, [refresh])
+
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      void refreshCurrentWeek().catch((error) =>
+        setMessage(error instanceof Error ? error.message : 'Could not refresh operations.'),
+      )
+    }
+    const interval = window.setInterval(refreshWhenVisible, 15_000)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    return () => {
+      window.clearInterval(interval)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+    }
+  }, [refreshCurrentWeek])
 
   const selectWeek = useCallback(async (selected: string) => {
     weekIdRef.current = selected
     setWeekId(selected)
-    try { await loadWeek(selected) }
+    try { await loadWeek(selected, true) }
     catch (error) { setMessage(error instanceof Error ? error.message : 'Could not load the selected operational week.') }
   }, [loadWeek])
 
@@ -117,6 +137,13 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
   }, [loadWeek])
 
   const week = weeks.find((item) => item.id === weekId)
+
+  const navigate = useCallback((nextPage: string) => {
+    setPage(nextPage)
+    void refreshCurrentWeek().catch((error) =>
+      setMessage(error instanceof Error ? error.message : 'Could not refresh operations.'),
+    )
+  }, [refreshCurrentWeek])
 
   const upload = async () => {
     const file = fileInput.current?.files?.[0]
@@ -248,7 +275,7 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
           ? <ShippingPage key={`${week.id}-${week.loads.length}`} loads={week.loads} onStatusChange={updateShippingStatus} onHubAssignmentChange={updateShippingHubAssignment} />
           : <DashboardPage loads={week.loads} records={week.productionRecords} />
 
-  return <AppShell activePage={page} navigationItems={nav} onNavigate={setPage} operationalWeek={week?.label}>
+  return <AppShell activePage={page} navigationItems={nav} onNavigate={navigate} operationalWeek={week?.label}>
     <div className="week-controls">
       {weekOptions.length > 0 && <select className="week-select" value={weekId} onChange={(event) => void selectWeek(event.target.value)}>{weekOptions.map((id) => <option key={id} value={id}>Week {id}</option>)}</select>}
       {(page === 'production' || page === 'shipping') && <button className="primary-button" onClick={() => { setUploadDomain(page === 'production' ? 'production' : 'bulk-plan'); setIsUploadOpen(true) }}>Upload {page === 'production' ? 'production' : 'Bulk Plan'}</button>}
