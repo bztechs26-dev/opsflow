@@ -117,7 +117,7 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
         setMessage(error instanceof Error ? error.message : 'Could not refresh operations.'),
       )
     }
-    const interval = window.setInterval(refreshWhenVisible, 15_000)
+    const interval = window.setInterval(refreshWhenVisible, 5_000)
     document.addEventListener('visibilitychange', refreshWhenVisible)
     return () => {
       window.clearInterval(interval)
