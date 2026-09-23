@@ -44,6 +44,7 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
   const lastActivityAt = useRef(Date.now())
   const weekIdRef = useRef('')
   const loadedWeekIds = useRef(new Set<string>())
+  const initialWeekSelected = useRef(false)
 
   useEffect(() => {
     const noteActivity = () => {
@@ -97,7 +98,14 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
     // first so a fresh sign-in never opens a prior week's data by default.
     const ordered = [...ids].sort((left, right) => Number(right) - Number(left))
     setWeekOptions(ordered)
-    const selected = ordered.includes(weekIdRef.current) ? weekIdRef.current : ordered[0] ?? ''
+    const newestWeek = ordered[0] ?? ''
+    // Do not preserve a selection until this session has explicitly selected
+    // its initial week. This makes a new sign-in deterministic even when
+    // React starts more than one initial data request in development mode.
+    const selected = initialWeekSelected.current && ordered.includes(weekIdRef.current)
+      ? weekIdRef.current
+      : newestWeek
+    initialWeekSelected.current = true
     if (selected !== weekIdRef.current) {
       weekIdRef.current = selected
       setWeekId(selected)
