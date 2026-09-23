@@ -93,7 +93,9 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
 
   const refresh = useCallback(async () => {
     const ids = await fetchWeeks(session.idToken)
-    const ordered = [...ids].sort((left, right) => Number(left) - Number(right))
+    // The current operational week is the newest available week. Keep it
+    // first so a fresh sign-in never opens a prior week's data by default.
+    const ordered = [...ids].sort((left, right) => Number(right) - Number(left))
     setWeekOptions(ordered)
     const selected = ordered.includes(weekIdRef.current) ? weekIdRef.current : ordered[0] ?? ''
     if (selected !== weekIdRef.current) {
