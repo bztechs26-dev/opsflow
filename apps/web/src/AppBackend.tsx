@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { clearSession, continueSession as continueSessionApi, fetchWeek, fetchWeeks, loadSession, moveProductionZip as moveProductionZipApi, operationalYear, type Session, updateMachineRate as updateMachineRateApi, updateProductionStatus as updateProductionStatusApi, updateShippingHubAssignment as updateShippingHubAssignmentApi, updateShippingStatus as updateShippingStatusApi, uploadWorkbook } from './api/opsflow'
 import { AppShell } from './components/AppShell'
 import { SignIn } from './components/SignIn'
+import { machineRateKey } from './data/machineCapacity'
 import { DashboardPage } from './pages/DashboardPage'
 import { ProductionPage } from './pages/ProductionPageNew'
 import { ProjectionPage } from './pages/ProjectionPage'
@@ -238,15 +239,16 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
   }
 
   const updateMachineRate = async (machine: string, rate: number) => {
-    const previous = week?.machineRates?.[machine]
+    const rateKey = machineRateKey(machine)
+    const previous = week?.machineRates?.[rateKey] ?? week?.machineRates?.[machine]
     setWeeks((items) => items.map((item) => item.id === weekId ? {
-      ...item, machineRates: { ...(item.machineRates ?? {}), [machine]: rate },
+      ...item, machineRates: { ...(item.machineRates ?? {}), [rateKey]: rate },
     } : item))
     try {
       await updateMachineRateApi(week?.year ?? operationalYear, weekId, machine, rate, session.idToken)
     } catch (error) {
       setWeeks((items) => items.map((item) => item.id === weekId ? {
-        ...item, machineRates: (() => { const restored = { ...(item.machineRates ?? {}) }; if (previous === undefined) delete restored[machine]; else restored[machine] = previous; return restored })(),
+        ...item, machineRates: (() => { const restored = { ...(item.machineRates ?? {}) }; if (previous === undefined) delete restored[rateKey]; else restored[rateKey] = previous; return restored })(),
       } : item))
       setMessage(error instanceof Error ? error.message : 'Could not save the machine hourly rate.')
       throw error

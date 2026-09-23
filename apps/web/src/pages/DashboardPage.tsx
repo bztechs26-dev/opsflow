@@ -1,6 +1,6 @@
 ﻿import { useMemo, useState } from 'react'
 import type { Load, ProductionRecord } from '../types/operations'
-import { capacityForMachine, formatRunHours } from '../data/machineCapacity'
+import { capacityForMachine, configuredMachineRate, formatRunHours } from '../data/machineCapacity'
 
 interface Props {
   loads: Load[]
@@ -19,7 +19,7 @@ export function DashboardPage({ loads, records, machineRates = {} }: Props) {
   const totalHH = visibleRecords.reduce((sum, record) => sum + record.volume, 0)
   const completeHH = visibleRecords.filter(isProcessed).reduce((sum, record) => sum + record.volume, 0)
   const percent = totalHH ? Math.round((completeHH / totalHH) * 100) : 0
-  const productionMachines = Object.entries(groupBy(visibleRecords, (record) => record.machine)).filter(([machine, items]) => Boolean(capacityForMachine(machine, items, machineRates[machine])))
+  const productionMachines = Object.entries(groupBy(visibleRecords, (record) => record.machine)).filter(([machine, items]) => Boolean(capacityForMachine(machine, items, configuredMachineRate(machineRates, machine))))
   const areaProgress = area === 'ALL'
     ? areas.filter((key) => key !== 'ALL').map((key) => ({ ...progressFor(records.filter((record) => recordArea(record) === key)), key }))
     : [{ ...progressFor(visibleRecords), key: area }]
@@ -45,7 +45,7 @@ export function DashboardPage({ loads, records, machineRates = {} }: Props) {
       <section className="panel chart-panel"><div className="panel-header"><h2>{area === 'ALL' ? 'Production completion by area' : `${areaLabel} production completion`}</h2><span>Completed household quantity</span></div><div className="bar-chart">{areaProgress.map(({ key, complete, total, percent: areaPercent }) => <ProgressBar key={key} label={areaLabels[key] ?? key} value={complete} total={total} percent={areaPercent} />)}</div></section>
       <section className="panel chart-panel"><div className="panel-header"><h2>Shipping delivery state</h2><span>All operations · {loads.length} planned loads</span></div><DeliveryDonut total={loads.length} items={deliverySummary} /></section>
     </div>
-    <section className="panel"><div className="panel-header"><h2>{areaLabel} machine capacity and progress</h2><span>Completion, runnable pieces, and projected run time by machine</span></div><div className="machine-grid">{productionMachines.sort(([a], [b]) => a.localeCompare(b)).map(([machine, items]) => <MachineCard key={machine} machine={machine} items={items} activeRate={machineRates[machine]} />)}</div>{!productionMachines.length && <p className="empty-area-message">No production records have been uploaded for {areaLabel} this week.</p>}</section>
+    <section className="panel"><div className="panel-header"><h2>{areaLabel} machine capacity and progress</h2><span>Completion, runnable pieces, and projected run time by machine</span></div><div className="machine-grid">{productionMachines.sort(([a], [b]) => a.localeCompare(b)).map(([machine, items]) => <MachineCard key={machine} machine={machine} items={items} activeRate={configuredMachineRate(machineRates, machine)} />)}</div>{!productionMachines.length && <p className="empty-area-message">No production records have been uploaded for {areaLabel} this week.</p>}</section>
   </section>
 }
 

@@ -127,6 +127,13 @@ class OperationalKeyTests(unittest.TestCase):
             repo.update_production_status(self.week_36, "FE", "A01~07045", "COMPLETE", "user-1", 1)
         self.assertEqual(table.items, {})
 
+    def test_machine_rate_uses_a_canonical_machine_key(self) -> None:
+        table = FakeTable()
+        repo = OperationalRepository(table=table)
+        repo.update_machine_rate(self.week_36, "Ferag  01", 18_000, "user-1")
+        item = table.items[(build_week_pk(self.week_36), "MACHINE_RATES")]
+        self.assertEqual(item["rates"], {"FERAG 01": 18_000})
+
     def test_reimport_preserves_user_status(self) -> None:
         table = FakeTable()
         repo = OperationalRepository(table=table)

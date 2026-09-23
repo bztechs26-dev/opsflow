@@ -314,13 +314,17 @@ class OperationalRepository:
         key = {"pk": build_week_pk(context), "sk": "MACHINE_RATES"}
         existing = self._table.get_item(Key=key).get("Item") or {}
         rates = dict(existing.get("rates") or {})
-        rates[machine] = rate
+        # Source workbooks sometimes differ only in capitalization or repeated
+        # whitespace (for example, "Ferag 01" vs "FERAG  01").  A canonical
+        # key ensures the rate survives the next read/poll cycle.
+        machine_key = " ".join(machine.strip().upper().split())
+        rates[machine_key] = rate
         now = utc_now()
         self._table.put_item(Item={
             **existing, **key, "entityType": "MACHINE_RATES", "rates": rates,
             "updatedAt": now, "updatedBy": updated_by, "createdAt": existing.get("createdAt", now),
         })
-        return {"machine": machine, "rate": rate, "updatedAt": now}
+        return {"machine": machine, "machineKey": machine_key, "rate": rate, "updatedAt": now}
 
     def update_production_status(self, context: OperationalContext, area: str, record_id: str, status: str, updated_by: str, expected_version: int | None = None, notes: str | None = None) -> dict[str, Any]:
         area = normalize_area(area)

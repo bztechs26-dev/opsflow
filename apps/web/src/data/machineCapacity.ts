@@ -2,6 +2,18 @@ import type { ProductionRecord } from '../types/operations'
 
 export type MachineCapacity = { machine: string; rate: number; totalPieces: number; completePieces: number; runnablePieces: number; blockedPieces: number; skippedPieces: number; estimatedHours?: number; percentComplete: number }
 
+// Workbooks are produced by more than one system.  Use one stable key for a
+// machine rate so harmless differences in casing or spaces cannot make a
+// saved rate appear to reset on the next shared-data refresh.
+export function machineRateKey(machine: string) {
+  return machine.trim().replace(/\s+/g, ' ').toUpperCase()
+}
+
+export function configuredMachineRate(rates: Record<string, number> | undefined, machine: string) {
+  if (!rates) return undefined
+  return rates[machine] ?? rates[machineRateKey(machine)]
+}
+
 export function machineRate(machine: string, activeRate?: number) {
   if (activeRate && allowedMachineRates(machine).includes(activeRate)) return activeRate
   const normalized = machine.trim().toUpperCase()

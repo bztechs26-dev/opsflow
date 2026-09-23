@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { allowedMachineRates, capacityForMachine, formatMachineRate, formatRunHours, machineRate } from '../data/machineCapacity'
+import { allowedMachineRates, capacityForMachine, configuredMachineRate, formatMachineRate, formatRunHours, machineRate } from '../data/machineCapacity'
 import type { ProductionRecord, ProductionStatus, QueuePlan } from '../types/operations'
 import './ProductionPage.css'
 
@@ -49,7 +49,7 @@ export function ProductionPage({ records, onStatusChange, onMove, onNotesChange,
   // of selects and inputs was delaying the operator's next action.
   const renderedRecords = visible.slice(0, renderLimit)
   const markets = [...new Set(renderedRecords.map((record) => record.market))]
-  const selectedMachineRate = machine === 'ALL' ? undefined : (machineRates[machine] ?? machineRate(machine))
+  const selectedMachineRate = machine === 'ALL' ? undefined : (configuredMachineRate(machineRates, machine) ?? machineRate(machine))
   const selectedMachineCapacity = machine === 'ALL' ? undefined : capacityForMachine(machine, visible, selectedMachineRate)
 
   const changeStatus = async (record: ProductionRecord, status: ProductionStatus) => {
@@ -80,7 +80,7 @@ export function ProductionPage({ records, onStatusChange, onMove, onNotesChange,
       </div>
       <section className="panel selected-machine"><div className="panel-header"><h2>{machine === 'ALL' ? 'All machines' : machine} progress</h2><span>{complete} / {visible.length} ZIPs processed</span></div><div className="progress-track"><div className="progress-fill" style={{ width: `${percent}%` }} /></div><div className="progress-label"><span>{percent}% processed</span><span>{visible.length - complete} remaining</span></div>{selectedMachineCapacity && <div className="machine-time-summary"><strong>{formatRunHours(selectedMachineCapacity.estimatedHours)}</strong><span>estimated time remaining for runnable ZIPs</span></div>}</section>
     </section>
-    <section className="panel machine-progress"><button className="machine-progress-toggle" type="button" onClick={() => setIsMachineProgressOpen((open) => !open)}><span><strong>Machine progress</strong><small>{machines.length} machines in this area</small></span><span className="toggle-label">{isMachineProgressOpen ? 'Hide details' : 'Show details'}<span aria-hidden="true">{isMachineProgressOpen ? '-' : '+'}</span></span></button>{isMachineProgressOpen && <div className="machine-grid">{machines.map((name) => <MachineCard key={name} name={name} records={areaRecords.filter((record) => record.machine === name)} activeRate={machineRates[name]} />)}</div>}</section>
+    <section className="panel machine-progress"><button className="machine-progress-toggle" type="button" onClick={() => setIsMachineProgressOpen((open) => !open)}><span><strong>Machine progress</strong><small>{machines.length} machines in this area</small></span><span className="toggle-label">{isMachineProgressOpen ? 'Hide details' : 'Show details'}<span aria-hidden="true">{isMachineProgressOpen ? '-' : '+'}</span></span></button>{isMachineProgressOpen && <div className="machine-grid">{machines.map((name) => <MachineCard key={name} name={name} records={areaRecords.filter((record) => record.machine === name)} activeRate={configuredMachineRate(machineRates, name)} />)}</div>}</section>
     {markets.map((market) => <MarketTable key={market} market={market} records={renderedRecords.filter((record) => record.market === market)} machines={availableMachines} savingId={savingId} movingId={movingId} onStatusChange={changeStatus} onMachineChange={changeMachine} onNotesChange={onNotesChange} />)}
     {visible.length > renderedRecords.length && <section className="panel production-result-limit"><span>Showing {renderedRecords.length.toLocaleString()} of {visible.length.toLocaleString()} ZIP records</span><button className="secondary-button" type="button" onClick={() => setRenderLimit((current) => current + renderLimitStep)}>Load {Math.min(renderLimitStep, visible.length - renderedRecords.length).toLocaleString()} more</button></section>}
     {!visible.length && <section className="panel empty-page"><h2>No ZIP / ATZ records found</h2><p>Try a different ZIP/ATZ search, machine, or operational-area filter.</p></section>}
