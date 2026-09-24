@@ -293,15 +293,18 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
     }
   }
 
-  const content = page === 'projection'
-    ? <ProjectionPage weeks={weeks} availableWeekIds={weekOptions} selectedWeekId={weekId} token={session.idToken} onDataChanged={refresh} onWeekSelected={selectWeek} onEnsureWeeksLoaded={ensureWeeksLoaded} />
-    : !week
-      ? <section className="panel empty-page"><h2>No operational weeks loaded</h2><p>Upload a Production QA workbook or Bulk Plan to add an operational week.</p></section>
-      : page === 'production'
-        ? <ProductionPage records={week.productionRecords} queuePlan={week.queuePlan} machineRates={week.machineRates} onMachineRateChange={updateMachineRate} onStatusChange={updateProductionStatus} onMove={moveProductionZip} onNotesChange={updateProductionNotes} onQueuePlanChange={() => undefined} />
-        : page === 'shipping'
-          ? <ShippingPage key={`${week.id}-${week.loads.length}`} loads={week.loads} onStatusChange={updateShippingStatus} onHubAssignmentChange={updateShippingHubAssignment} />
-          : <DashboardPage loads={week.loads} records={week.productionRecords} machineRates={week.machineRates} />
+  // Keep each module mounted when the operator changes navigation.  Its local
+  // filters, selected machine/market, search, and expanded details therefore
+  // remain exactly where the operator left them, while the shared week data
+  // can still refresh in the background.
+  const content = !week
+    ? <section className="panel empty-page"><h2>No operational weeks loaded</h2><p>Upload a Production QA workbook or Bulk Plan to add an operational week.</p></section>
+    : <>
+      <div hidden={page !== 'dashboard'}><DashboardPage loads={week.loads} records={week.productionRecords} machineRates={week.machineRates} /></div>
+      <div hidden={page !== 'production'}><ProductionPage records={week.productionRecords} queuePlan={week.queuePlan} machineRates={week.machineRates} onMachineRateChange={updateMachineRate} onStatusChange={updateProductionStatus} onMove={moveProductionZip} onNotesChange={updateProductionNotes} onQueuePlanChange={() => undefined} /></div>
+      <div hidden={page !== 'shipping'}><ShippingPage loads={week.loads} onStatusChange={updateShippingStatus} onHubAssignmentChange={updateShippingHubAssignment} /></div>
+      <div hidden={page !== 'projection'}><ProjectionPage weeks={weeks} availableWeekIds={weekOptions} selectedWeekId={weekId} token={session.idToken} onDataChanged={refresh} onWeekSelected={selectWeek} onEnsureWeeksLoaded={ensureWeeksLoaded} /></div>
+    </>
 
   return <AppShell activePage={page} navigationItems={nav} onNavigate={navigate} operationalWeek={week?.label}>
     <div className="week-controls">
