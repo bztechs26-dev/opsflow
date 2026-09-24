@@ -66,7 +66,47 @@ export function ProjectionPage({ weeks, availableWeekIds = weeks.map((week) => w
     <section className="panel projection-table"><div className="panel-header"><div><h2>Projection trips</h2><span>Remaining time uses each machine’s current run rate and its incomplete ZIP quantity.</span></div><span>{visible.length} visible trips</span></div><div className="table-wrap"><table className="data-table projection-trip-table"><thead><tr><th>Trip number</th><th>ZIPs</th><th>Production progress</th><th>Remaining time</th><th>Readiness</th></tr></thead><tbody>{visible.map((item) => { const id = `${item.market}-${item.trip}`; const open = expanded.has(id); return <><tr key={id}><td><button className="trip-details-toggle" type="button" onClick={() => toggle(id)} aria-expanded={open}><span>{open ? '-' : '+'}</span>{item.trip}</button></td><td>{item.zips.length}</td><td><div className="projection-progress"><div className="progress-label"><span>{item.complete} of {item.zips.length} ZIPs processed</span><strong>{item.percent}%</strong></div><div className="progress-track"><div className="progress-fill" style={{ width: `${item.percent}%` }} /></div></div></td><td>{formatHours(item.remainingHours)}</td><td><Readiness readiness={item.readiness}/></td></tr>{open && <tr className="trip-details-row" key={`${id}-details`}><td colSpan={5}><table className="data-table zip-details-table"><thead><tr><th>ZIP / ATZ</th><th>Machine</th><th>Quantity</th><th>Production status</th><th>Remaining time</th></tr></thead><tbody>{item.zips.map((zip) => <tr key={zip.zip}><td>{zip.zip}</td><td>{zip.machine ?? '-'}</td><td>{zip.quantity?.toLocaleString() ?? '-'}</td><td><ZipStatus status={zip.status}/></td><td>{zip.status === 'COMPLETE' || zip.status === 'BLOCKED' ? 'Complete' : formatHours(zip.remainingHours)}</td></tr>)}</tbody></table></td></tr>}</> })}</tbody></table></div>{!visible.length && <div className="empty-state"><h3>No Projection mappings found</h3><p>Upload an FE, BE, MMSI, or Bost CT Hart ZIP/TR workbook for this week.</p></div>}</section></>}{isUploading && <div className="processing-overlay" role="status" aria-live="polite"><section className="processing-card"><span className="processing-spinner" aria-hidden="true" /><div><h2>Preparing your operational data</h2><p>Your workbook is being validated and added to the dashboard. This page will update automatically.</p></div></section></div>}</section>
 }
 
-function deriveTrips(markets: ProjectionMarket[], weeks: OperationalWeek[], shippingLoads: Load[]): TripProjection[] { const loadsByTrip = new Map(shippingLoads.map((load) => [normalizeTrip(load.number), load])); return markets.flatMap((market) => Object.entries(market.mappings).map(([trip, zips]) => { const source = weeks.find((week) => Number(week.id) === market.productionSourceWeek); const records = (source?.productionRecords ?? []).filter((record) => normalizeArea(record.sourceArea) === normalizeArea(market.productionSourceArea)); const load = loadsByTrip.get(normalizeTrip(trip)); const progress: ZipProgress[] = zips.map((zip) => { const record = bestRecord(records.filter((item) => normalizeZip(item.zip) === normalizeZip(zip))); const rate = record ? machineRate(record.machine, configuredMachineRate(source?.machineRates, record.machine)) : 0; const hours = record && record.status !== 'COMPLETE' && record.status !== 'BLOCKED' && record.status !== 'SKIPPED' && rate ? record.volume / rate : undefined; return { zip, status: record?.status ?? 'MISSING', machine: record?.machine, quantity: record?.volume, remainingHours: Number.isFinite(hours) ? hours : undefined } }); const complete = progress.filter((item) => item.status === 'COMPLETE' || item.status === 'BLOCKED').length; const statuses = progress.map((item) => item.status); const workload = new Map<string, number>(); for (const item of progress) if (item.remainingHours && item.machine) workload.set(item.machine, (workload.get(item.machine) ?? 0) + item.remainingHours); const remainingHours = workload.size ? Math.max(...workload.values()) : complete === zips.length ? 0 : undefined; const readiness = statuses.includes('SKIPPED') ? 'LATE' : statuses.includes('MISSING') ? 'NEEDS_REVIEW' : complete === zips.length ? 'READY' : complete ? 'PARTIALLY_READY' : 'NOT_READY'; return { market: market.market, trip, zips: progress, complete, percent: zips.length ? Math.round((complete / zips.length) * 100) : 0, readiness, remainingHours, carrier: load?.carrier, destination: load?.destination, shippingStatus: load?.status ?? 'NOT_IN_BULK_PLAN' } })) }
+function deriveTrips(markets: ProjectionMarket[], weeks: OperationalWeek[], shippingLoads: Load[]): TripProjection[] {
+  const loadsByTrip = new Map(shippingLoads.map((load) => [normalizeTrip(load.number), load]))
+  return markets.flatMap((market) => Object.entries(market.mappings).map(([trip, zips]) => {
+    const source = weeks.find((week) => Number(week.id) === market.productionSourceWeek)
+    const marketRecords = (source?.productionRecords ?? []).filter((record) => normalizeArea(record.sourceArea) === normalizeArea(market.productionSourceArea))
+    const queueHours = machineQueueHours(source?.productionRecords ?? [], source?.machineRates)
+    const load = loadsByTrip.get(normalizeTrip(trip))
+    const progress: ZipProgress[] = zips.map((zip) => {
+      const record = bestRecord(marketRecords.filter((item) => normalizeZip(item.zip) === normalizeZip(zip)))
+      return { zip, status: record?.status ?? 'MISSING', machine: record?.machine, quantity: record?.volume, remainingHours: record && isRunnable(record) ? queueHours.get(record.id) : undefined }
+    })
+    const complete = progress.filter((item) => item.status === 'COMPLETE' || item.status === 'BLOCKED').length
+    const statuses = progress.map((item) => item.status)
+    const byMachine = new Map<string, number>()
+    for (const item of progress) if (item.remainingHours !== undefined && item.machine) byMachine.set(item.machine, Math.max(byMachine.get(item.machine) ?? 0, item.remainingHours))
+    const remainingHours = byMachine.size ? Math.max(...byMachine.values()) : complete === zips.length ? 0 : undefined
+    const readiness = statuses.includes('SKIPPED') ? 'LATE' : statuses.includes('MISSING') ? 'NEEDS_REVIEW' : complete === zips.length ? 'READY' : complete ? 'PARTIALLY_READY' : 'NOT_READY'
+    return { market: market.market, trip, zips: progress, complete, percent: zips.length ? Math.round((complete / zips.length) * 100) : 0, readiness, remainingHours, carrier: load?.carrier, destination: load?.destination, shippingStatus: load?.status ?? 'NOT_IN_BULK_PLAN' }
+  }))
+}
+
+function machineQueueHours(records: ProductionRecord[], rates: Record<string, number> | undefined) {
+  const queues = new Map<string, ProductionRecord[]>()
+  for (const record of records) {
+    if (!machineRate(record.machine, configuredMachineRate(rates, record.machine))) continue
+    queues.set(record.machine, [...(queues.get(record.machine) ?? []), record])
+  }
+  const hours = new Map<string, number>()
+  for (const [machine, queue] of queues) {
+    const rate = machineRate(machine, configuredMachineRate(rates, machine))
+    let unfinishedPieces = 0
+    for (const record of [...queue].sort((left, right) => left.queueOrder - right.queueOrder)) {
+      if (!isRunnable(record)) continue
+      unfinishedPieces += record.volume
+      hours.set(record.id, unfinishedPieces / rate)
+    }
+  }
+  return hours
+}
+
+function isRunnable(record: ProductionRecord) { return record.status !== 'COMPLETE' && record.status !== 'BLOCKED' && record.status !== 'SKIPPED' }
 function bestStatus(records: ProductionRecord[]): ProductionStatus | 'MISSING' { const priority: Record<ProductionStatus, number> = { COMPLETE: 5, BLOCKED: 4, NOT_STARTED: 3, REWORK: 2, SKIPPED: 1 }; return records.reduce<ProductionStatus | 'MISSING'>((best, record) => best === 'MISSING' || priority[record.status] > priority[best] ? record.status : best, 'MISSING') }
 function bestRecord(records: ProductionRecord[]) { const status = bestStatus(records); return records.find((record) => record.status === status) }
 function formatHours(hours: number | undefined) { return hours === 0 ? 'Complete' : hours === undefined ? 'Needs review' : `${hours.toFixed(hours < 10 ? 1 : 0)} hr` }
