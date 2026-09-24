@@ -46,6 +46,27 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
   const weekIdRef = useRef('')
   const loadedWeekIds = useRef(new Set<string>())
   const initialWeekSelected = useRef(false)
+  // A background refresh can complete while a rate PATCH is still in flight.
+  // Keep the operator's selected rate authoritative until DynamoDB returns
+  // that same value, instead of briefly reverting the selector to its default.
+  const pendingMachineRates = useRef(new Map<string, number>())
+
+  const mergePendingMachineRates = useCallback((loaded: OperationalWeek): OperationalWeek => {
+    const rates = { ...(loaded.machineRates ?? {}) }
+    const prefix = `${loaded.id}:`
+    let hasPending = false
+    for (const [pendingKey, pendingRate] of pendingMachineRates.current) {
+      if (!pendingKey.startsWith(prefix)) continue
+      const machineKey = pendingKey.slice(prefix.length)
+      if (rates[machineKey] === pendingRate) {
+        pendingMachineRates.current.delete(pendingKey)
+      } else {
+        rates[machineKey] = pendingRate
+        hasPending = true
+      }
+    }
+    return hasPending ? { ...loaded, machineRates: rates } : loaded
+  }, [])
 
   useEffect(() => {
     const noteActivity = () => {
@@ -88,10 +109,10 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
 
   const loadWeek = useCallback(async (id: string, force = false) => {
     if (!id || (!force && loadedWeekIds.current.has(id))) return
-    const loaded = await fetchWeek(id, session.idToken) as OperationalWeek
+    const loaded = mergePendingMachineRates(await fetchWeek(id, session.idToken) as OperationalWeek)
     loadedWeekIds.current.add(id)
     setWeeks((items) => [...items.filter((item) => item.id !== id), loaded].sort((left, right) => Number(left.id) - Number(right.id)))
-  }, [session.idToken])
+  }, [mergePendingMachineRates, session.idToken])
 
   const refresh = useCallback(async () => {
     const ids = await fetchWeeks(session.idToken)
@@ -240,13 +261,21 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
 
   const updateMachineRate = async (machine: string, rate: number) => {
     const rateKey = machineRateKey(machine)
+    const pendingKey = `${weekId}:${rateKey}`
     const previous = week?.machineRates?.[rateKey] ?? week?.machineRates?.[machine]
+    pendingMachineRates.current.set(pendingKey, rate)
     setWeeks((items) => items.map((item) => item.id === weekId ? {
       ...item, machineRates: { ...(item.machineRates ?? {}), [rateKey]: rate },
     } : item))
     try {
       await updateMachineRateApi(week?.year ?? operationalYear, weekId, machine, rate, session.idToken)
+      // Re-read after the PATCH. mergePendingMachineRates protects this value
+      // if DynamoDB's normal read briefly returns the prior item version.
+      void loadWeek(weekId, true).catch((error) =>
+        setMessage(error instanceof Error ? error.message : 'Could not refresh the machine rate.'),
+      )
     } catch (error) {
+      pendingMachineRates.current.delete(pendingKey)
       setWeeks((items) => items.map((item) => item.id === weekId ? {
         ...item, machineRates: (() => { const restored = { ...(item.machineRates ?? {}) }; if (previous === undefined) delete restored[rateKey]; else restored[rateKey] = previous; return restored })(),
       } : item))
