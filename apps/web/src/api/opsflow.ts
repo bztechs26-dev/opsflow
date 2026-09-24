@@ -156,6 +156,15 @@ export async function updateMachineRate(year: number, week: string, machine: str
   return data
 }
 
+export async function updateQueuePlan(year: number, week: string, plan: { shiftHours: number; machines: Array<{ machine: string; expectedPackages: number; lhptGoal: number; availableCrew?: number }> }, token: string) {
+  const response = await request(`/production/${year}/${encodeURIComponent(week)}/queue-plan`, token, {
+    method: 'PATCH', body: JSON.stringify(plan),
+  })
+  const data = await response.json() as { message?: string; shiftHours?: number; machines?: Array<{ machine: string; expectedPackages: number; lhptGoal: number; availableCrew?: number }> }
+  if (!response.ok) throw new Error(data.message ?? 'Could not save the Capacity & Staffing plan.')
+  return data
+}
+
 export async function updateShippingStatus(year: number, week: string, loadNumber: string, status: string, token: string, statusAt?: string) {
   const response = await request(`/shipping/${year}/${encodeURIComponent(week)}/${encodeURIComponent(loadNumber)}/status`, token, {
     method: 'PATCH', body: JSON.stringify({ status, statusAt }),

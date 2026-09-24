@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { clearSession, continueSession as continueSessionApi, fetchWeek, fetchWeeks, loadSession, moveProductionZip as moveProductionZipApi, operationalYear, type Session, updateMachineRate as updateMachineRateApi, updateProductionStatus as updateProductionStatusApi, updateShippingHubAssignment as updateShippingHubAssignmentApi, updateShippingStatus as updateShippingStatusApi, uploadWorkbook } from './api/opsflow'
+import { clearSession, continueSession as continueSessionApi, fetchWeek, fetchWeeks, loadSession, moveProductionZip as moveProductionZipApi, operationalYear, type Session, updateMachineRate as updateMachineRateApi, updateProductionStatus as updateProductionStatusApi, updateQueuePlan as updateQueuePlanApi, updateShippingHubAssignment as updateShippingHubAssignmentApi, updateShippingStatus as updateShippingStatusApi, uploadWorkbook } from './api/opsflow'
 import { AppShell } from './components/AppShell'
 import { SignIn } from './components/SignIn'
 import { machineRateKey } from './data/machineCapacity'
@@ -7,7 +7,7 @@ import { DashboardPage } from './pages/DashboardPage'
 import { ProductionPage } from './pages/ProductionPageNew'
 import { ProjectionPage } from './pages/ProjectionPage'
 import { ShippingPage } from './pages/ShippingPage'
-import type { NavigationItem, OperationalWeek, ProductionStatus } from './types/operations'
+import type { NavigationItem, OperationalWeek, ProductionStatus, QueuePlan } from './types/operations'
 import './App.css'
 
 const nav: NavigationItem[] = [
@@ -284,6 +284,19 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
     }
   }
 
+  const updateQueuePlan = async (plan: QueuePlan) => {
+    const prior = week?.queuePlan
+    setWeeks((items) => items.map((item) => item.id === weekId ? { ...item, queuePlan: plan } : item))
+    try {
+      const saved = await updateQueuePlanApi(week?.year ?? operationalYear, weekId, plan, session.idToken)
+      setWeeks((items) => items.map((item) => item.id === weekId ? { ...item, queuePlan: saved as QueuePlan } : item))
+    } catch (error) {
+      setWeeks((items) => items.map((item) => item.id === weekId ? { ...item, queuePlan: prior } : item))
+      setMessage(error instanceof Error ? error.message : 'Could not save the Capacity & Staffing plan.')
+      throw error
+    }
+  }
+
   const updateShippingStatus = async (id: string, status: string, statusAt?: string) => {
     const load = week?.loads.find((item) => item.id === id)
     if (!load) {
@@ -330,7 +343,7 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
     ? <section className="panel empty-page"><h2>No operational weeks loaded</h2><p>Upload a Production QA workbook or Bulk Plan to add an operational week.</p></section>
     : <>
       <div hidden={page !== 'dashboard'}><DashboardPage loads={week.loads} records={week.productionRecords} machineRates={week.machineRates} /></div>
-      <div hidden={page !== 'production'}><ProductionPage records={week.productionRecords} queuePlan={week.queuePlan} machineRates={week.machineRates} onMachineRateChange={updateMachineRate} onStatusChange={updateProductionStatus} onMove={moveProductionZip} onNotesChange={updateProductionNotes} onQueuePlanChange={() => undefined} /></div>
+      <div hidden={page !== 'production'}><ProductionPage records={week.productionRecords} queuePlan={week.queuePlan} machineRates={week.machineRates} onMachineRateChange={updateMachineRate} onStatusChange={updateProductionStatus} onMove={moveProductionZip} onNotesChange={updateProductionNotes} onQueuePlanChange={updateQueuePlan} /></div>
       <div hidden={page !== 'shipping'}><ShippingPage loads={week.loads} onStatusChange={updateShippingStatus} onHubAssignmentChange={updateShippingHubAssignment} /></div>
       <div hidden={page !== 'projection'}><ProjectionPage weeks={weeks} availableWeekIds={weekOptions} selectedWeekId={weekId} token={session.idToken} onDataChanged={refresh} onWeekSelected={selectWeek} onEnsureWeeksLoaded={ensureWeeksLoaded} /></div>
     </>

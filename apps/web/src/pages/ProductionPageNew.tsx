@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
 import { allowedMachineRates, capacityForMachine, configuredMachineRate, formatMachineRate, formatRunHours, machineRate } from '../data/machineCapacity'
+import { StaffingPlanner } from '../components/StaffingPlanner'
+import { QueueProjection } from '../components/QueueProjection'
 import type { ProductionRecord, ProductionStatus, QueuePlan } from '../types/operations'
 import './ProductionPage.css'
 
@@ -25,7 +27,8 @@ interface Props {
   onMachineRateChange?: (machine: string, rate: number) => void | Promise<void>
 }
 
-export function ProductionPage({ records, onStatusChange, onMove, onNotesChange, machineRates = {}, onMachineRateChange }: Props) {
+export function ProductionPage({ records, queuePlan, onStatusChange, onMove, onNotesChange, onQueuePlanChange, machineRates = {}, onMachineRateChange }: Props) {
+  const [productionView, setProductionView] = useState<'zip' | 'staffing'>('zip')
   const [area, setArea] = useState('ALL')
   const [machine, setMachine] = useState('ALL')
   const [query, setQuery] = useState('')
@@ -52,6 +55,7 @@ export function ProductionPage({ records, onStatusChange, onMove, onNotesChange,
   const markets = [...new Set(renderedRecords.map((record) => record.market))]
   const selectedMachineRate = machine === 'ALL' ? undefined : (configuredMachineRate(machineRates, machine) ?? machineRate(machine))
   const selectedMachineCapacity = machine === 'ALL' ? undefined : capacityForMachine(machine, visible, selectedMachineRate)
+  const productionNavigation = <nav className="production-subnav" aria-label="Production views"><button className={productionView === 'zip' ? 'active' : ''} type="button" onClick={() => setProductionView('zip')}>ZIP operations</button><button className={productionView === 'staffing' ? 'active' : ''} type="button" onClick={() => setProductionView('staffing')}>Capacity & staffing</button></nav>
 
   const changeStatus = async (record: ProductionRecord, status: ProductionStatus) => {
     setSavingId(record.id)
@@ -76,8 +80,11 @@ export function ProductionPage({ records, onStatusChange, onMove, onNotesChange,
     }
   }
 
+  if (productionView === 'staffing') return <section className="page"><div className="page-heading"><div><h1>Production</h1><p>Plan expected pieces and crew requirements by machine and shift.</p></div></div>{productionNavigation}<StaffingPlanner records={records} plan={queuePlan} onChange={onQueuePlanChange}/><QueueProjection records={records} machine={records[0]?.machine ?? ''} plan={queuePlan} onChange={onQueuePlanChange}/></section>
+
   return <section className="page">
     <div className="page-heading"><div><h1>Production</h1><p>Track ZIP-level production readiness by operational area and machine.</p></div></div>
+    {productionNavigation}
     <div className="area-tabs">{areas.map((item) => <button key={item.id} className={area === item.id ? 'area-tab active' : 'area-tab'} onClick={() => { setArea(item.id); setMachine('ALL'); setRenderLimit(initialRenderLimit) }}>{item.label}<span>{item.id === 'ALL' ? records.length : records.filter((record) => recordArea(record) === item.id).length}</span></button>)}</div>
     <section className="production-sticky">
       <div className="production-summary">

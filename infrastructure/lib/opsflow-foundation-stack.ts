@@ -238,6 +238,12 @@ export class OpsflowFoundationStack extends cdk.Stack {
         authorizationType: apigateway.AuthorizationType.COGNITO,
         authorizer: apiAuthorizer,
       });
+    productionWeek
+      .addResource('queue-plan')
+      .addMethod('PATCH', new apigateway.LambdaIntegration(healthFunction), {
+        authorizationType: apigateway.AuthorizationType.COGNITO,
+        authorizer: apiAuthorizer,
+      });
     const productionRecord = productionWeek
       .addResource('{area}')
       .addResource('{recordId}');

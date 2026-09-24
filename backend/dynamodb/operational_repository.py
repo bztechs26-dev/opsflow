@@ -116,6 +116,8 @@ class OperationalRepository:
         if document_type == "production":
             count = len(parsed["records"])
             self._upsert_market_area(context, parsed["records"])
+            if parsed.get("queuePlan"):
+                self.update_queue_plan(context, parsed["queuePlan"], "production-import")
         elif document_type == "bulk-plan":
             count = self._upsert_bulk_plan(context, parsed["loads"])
         elif document_type == "projection":
@@ -295,6 +297,7 @@ class OperationalRepository:
         weekly_items = self._query_partition(build_markets_pk(context))
         items = self._query_partition(build_week_pk(context))
         rate_item = next((item for item in items if item.get("entityType") == "MACHINE_RATES"), {})
+        queue_plan_item = next((item for item in items if item.get("entityType") == "QUEUE_PLAN"), {})
         machine_rates = {
             _machine_rate_key(str(machine)): int(rate)
             for machine, rate in (rate_item.get("rates") or {}).items()
@@ -306,7 +309,7 @@ class OperationalRepository:
             "productionRecords": _flatten_market_records(weekly_items, context),
             "loads": _bulk_plan_loads(weekly_items),
             "machineRates": machine_rates,
-            "queuePlan": None,
+            "queuePlan": _queue_plan_response(queue_plan_item),
             "projectionRequirements": [item for item in items if item.get("entityType") == "PROJECTION"],
         }
 
@@ -328,6 +331,39 @@ class OperationalRepository:
             "updatedAt": now, "updatedBy": updated_by, "createdAt": existing.get("createdAt", now),
         })
         return {"machine": machine, "machineKey": machine_key, "rate": rate, "updatedAt": now}
+
+    def update_queue_plan(self, context: OperationalContext, plan: dict[str, Any], updated_by: str) -> dict[str, Any]:
+        """Save per-week Capacity & Staffing assumptions for all operators."""
+        try:
+            shift_hours = float(plan.get("shiftHours", 0))
+        except (TypeError, ValueError) as error:
+            raise ValueError("shiftHours must be a positive number.") from error
+        if not 0 < shift_hours <= 24:
+            raise ValueError("shiftHours must be between 0 and 24.")
+        raw_machines = plan.get("machines")
+        if not isinstance(raw_machines, list) or not raw_machines:
+            raise ValueError("At least one machine planning row is required.")
+        machines: list[dict[str, Any]] = []
+        for row in raw_machines:
+            if not isinstance(row, dict):
+                raise ValueError("Each machine planning row must be an object.")
+            machine = str(row.get("machine") or "").strip()
+            try:
+                expected_packages = float(row.get("expectedPackages", 0))
+                lhpt_goal = float(row.get("lhptGoal", 0))
+                available_crew = row.get("availableCrew")
+                available_crew = None if available_crew in (None, "") else float(available_crew)
+            except (TypeError, ValueError) as error:
+                raise ValueError("Machine planning values must be numbers.") from error
+            if not machine or expected_packages < 0 or lhpt_goal < 0 or (available_crew is not None and available_crew < 0):
+                raise ValueError("Machine, expected packages, LHPT goal, and crew must be valid positive values.")
+            machines.append({"machine": machine, "expectedPackages": expected_packages, "lhptGoal": lhpt_goal, **({"availableCrew": available_crew} if available_crew is not None else {})})
+        key = {"pk": build_week_pk(context), "sk": "QUEUE_PLAN"}
+        existing = self._table.get_item(Key=key).get("Item") or {}
+        now = utc_now()
+        item = {**existing, **key, "entityType": "QUEUE_PLAN", "shiftHours": shift_hours, "machines": machines, "updatedAt": now, "updatedBy": updated_by, "createdAt": existing.get("createdAt", now)}
+        self._table.put_item(Item=_dynamo_values(item))
+        return _queue_plan_response(item) or {}
 
     def update_production_status(self, context: OperationalContext, area: str, record_id: str, status: str, updated_by: str, expected_version: int | None = None, notes: str | None = None) -> dict[str, Any]:
         area = normalize_area(area)
@@ -670,6 +706,26 @@ def _bulk_plan_load_number(load: dict[str, Any]) -> str:
 def _machine_rate_key(machine: str) -> str:
     """Stable machine-rate key across URL encoding and workbook variations."""
     return " ".join(unquote(machine).strip().upper().split())
+
+
+def _queue_plan_response(item: dict[str, Any]) -> dict[str, Any] | None:
+    if not item:
+        return None
+    machines = item.get("machines")
+    if not isinstance(machines, list):
+        return None
+    return {
+        "shiftHours": float(item.get("shiftHours") or 0),
+        "machines": [
+            {
+                "machine": str(row.get("machine") or ""),
+                "expectedPackages": float(row.get("expectedPackages") or 0),
+                "lhptGoal": float(row.get("lhptGoal") or 0),
+                **({"availableCrew": float(row["availableCrew"])} if row.get("availableCrew") is not None else {}),
+            }
+            for row in machines if isinstance(row, dict)
+        ],
+    }
 
 
 def _dynamo_values(value: Any) -> Any:

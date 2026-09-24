@@ -16,7 +16,7 @@ from import_processor import process_inbox_uploads
 from infrastructure import maintain_workflow_prefixes
 from log_events import log_event
 from read_api import read_operations
-from status_update_api import move_production_zip, update_machine_rate, update_production_status, update_shipping_hub_assignment, update_shipping_status
+from status_update_api import move_production_zip, update_machine_rate, update_production_status, update_queue_plan, update_shipping_hub_assignment, update_shipping_status
 from upload_api import create_upload_url
 
 
@@ -48,6 +48,9 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     if event.get("httpMethod") == "PATCH" and event.get("resource") == "/production/{year}/{week}/machine-rates/{machine}":
         return update_machine_rate(event)
+
+    if event.get("httpMethod") == "PATCH" and event.get("resource") == "/production/{year}/{week}/queue-plan":
+        return update_queue_plan(event)
 
     if event.get("httpMethod") == "PATCH" and event.get("resource") == "/shipping/{year}/{week}/{loadNumber}/status":
         return update_shipping_status(event)

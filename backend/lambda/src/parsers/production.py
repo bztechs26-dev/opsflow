@@ -80,7 +80,7 @@ def parse_production(contents: bytes, week: str, file_name: str) -> dict[str, An
 
     return {
         "records": records,
-        "queuePlan": None,
+        "queuePlan": _queue_plan(workbook),
         "affectedAreas": affected_areas,
     }
 
@@ -96,3 +96,34 @@ def _status(value: object) -> str:
 
 def _value(row: list[str], index: int) -> str:
     return row[index] if 0 <= index < len(row) else ""
+
+
+def _queue_plan(workbook: XlsxWorkbook) -> dict[str, Any] | None:
+    """Read the optional Crew Size sheet included with Production QA files."""
+    if not workbook.has_sheet("Crew Size"):
+        return None
+    rows = list(workbook.rows("Crew Size"))
+    if not rows:
+        return None
+    shift_hours = number(_value(rows[0], 1))
+    header_index = next((index for index, row in enumerate(rows) if any(text(cell).strip().lower() == "machine" for cell in row)), None)
+    if header_index is None or shift_hours <= 0:
+        return None
+    headers = {text(value).strip().lower(): index for index, value in enumerate(rows[header_index])}
+    machine_column = headers.get("machine")
+    packages_column = headers.get("expected packages")
+    lhpt_column = headers.get("lhpt goal")
+    if machine_column is None or packages_column is None or lhpt_column is None:
+        return None
+    machines = [
+        {
+            "machine": text(_value(row, machine_column)),
+            "expectedPackages": int(number(_value(row, packages_column))),
+            "lhptGoal": number(_value(row, lhpt_column)),
+        }
+        for row in rows[header_index + 1:]
+        if text(_value(row, machine_column))
+        and number(_value(row, packages_column)) > 0
+        and number(_value(row, lhpt_column)) > 0
+    ]
+    return {"shiftHours": shift_hours, "machines": machines} if machines else None

@@ -35,6 +35,18 @@ def update_machine_rate(event: dict[str, Any]) -> dict[str, Any]:
         return _response(400, {"message": str(error)})
 
 
+def update_queue_plan(event: dict[str, Any]) -> dict[str, Any]:
+    try:
+        path = event.get("pathParameters") or {}
+        context = OperationalContext(os.environ["DEFAULT_ORGANIZATION_ID"], path.get("year"), path.get("week"))
+        body = _json_body(event)
+        claims = ((event.get("requestContext") or {}).get("authorizer") or {}).get("claims") or {}
+        updated_by = str(claims.get("sub") or claims.get("email") or "authenticated-user")
+        return _response(200, OperationalRepository().update_queue_plan(context, body, updated_by))
+    except (TypeError, ValueError) as error:
+        return _response(400, {"message": str(error)})
+
+
 def update_production_status(event: dict[str, Any]) -> dict[str, Any]:
     try:
         path = event.get("pathParameters") or {}
