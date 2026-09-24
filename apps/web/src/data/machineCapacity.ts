@@ -6,12 +6,17 @@ export type MachineCapacity = { machine: string; rate: number; totalPieces: numb
 // machine rate so harmless differences in casing or spaces cannot make a
 // saved rate appear to reset on the next shared-data refresh.
 export function machineRateKey(machine: string) {
-  return machine.trim().replace(/\s+/g, ' ').toUpperCase()
+  try {
+    return decodeURIComponent(machine).trim().replace(/\s+/g, ' ').toUpperCase()
+  } catch {
+    return machine.trim().replace(/\s+/g, ' ').toUpperCase()
+  }
 }
 
 export function configuredMachineRate(rates: Record<string, number> | undefined, machine: string) {
   if (!rates) return undefined
-  return rates[machine] ?? rates[machineRateKey(machine)]
+  const key = machineRateKey(machine)
+  return rates[machine] ?? rates[key] ?? Object.entries(rates).find(([storedMachine]) => machineRateKey(storedMachine) === key)?.[1]
 }
 
 export function machineRate(machine: string, activeRate?: number) {

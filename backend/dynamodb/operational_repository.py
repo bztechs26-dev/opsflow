@@ -12,6 +12,7 @@ from decimal import Decimal
 import os
 from typing import Any
 import json
+from urllib.parse import unquote
 
 from dynamodb.keys import (
     OperationalContext,
@@ -295,7 +296,7 @@ class OperationalRepository:
         items = self._query_partition(build_week_pk(context))
         rate_item = next((item for item in items if item.get("entityType") == "MACHINE_RATES"), {})
         machine_rates = {
-            str(machine): int(rate)
+            _machine_rate_key(str(machine)): int(rate)
             for machine, rate in (rate_item.get("rates") or {}).items()
             if isinstance(rate, (int, float, Decimal))
         }
@@ -313,11 +314,13 @@ class OperationalRepository:
         """Persist the active rate used for all remaining work on one machine."""
         key = {"pk": build_week_pk(context), "sk": "MACHINE_RATES"}
         existing = self._table.get_item(Key=key).get("Item") or {}
-        rates = dict(existing.get("rates") or {})
+        # Normalize pre-existing encoded keys as well as new rate updates.
+        # API Gateway path parameters may otherwise retain '%20' for spaces.
+        rates = {_machine_rate_key(str(name)): value for name, value in (existing.get("rates") or {}).items()}
         # Source workbooks sometimes differ only in capitalization or repeated
         # whitespace (for example, "Ferag 01" vs "FERAG  01").  A canonical
         # key ensures the rate survives the next read/poll cycle.
-        machine_key = " ".join(machine.strip().upper().split())
+        machine_key = _machine_rate_key(machine)
         rates[machine_key] = rate
         now = utc_now()
         self._table.put_item(Item={
@@ -662,6 +665,11 @@ def _bulk_plan_load_number(load: dict[str, Any]) -> str:
     if not number:
         raise ValueError("Every Bulk Plan load must have a trip/load number.")
     return number
+
+
+def _machine_rate_key(machine: str) -> str:
+    """Stable machine-rate key across URL encoding and workbook variations."""
+    return " ".join(unquote(machine).strip().upper().split())
 
 
 def _dynamo_values(value: Any) -> Any:

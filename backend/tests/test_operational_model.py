@@ -130,7 +130,7 @@ class OperationalKeyTests(unittest.TestCase):
     def test_machine_rate_uses_a_canonical_machine_key(self) -> None:
         table = FakeTable()
         repo = OperationalRepository(table=table)
-        repo.update_machine_rate(self.week_36, "Ferag  01", 18_000, "user-1")
+        repo.update_machine_rate(self.week_36, "Ferag%2001", 18_000, "user-1")
         item = table.items[(build_week_pk(self.week_36), "MACHINE_RATES")]
         self.assertEqual(item["rates"], {"FERAG 01": 18_000})
 

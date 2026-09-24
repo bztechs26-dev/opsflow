@@ -7,6 +7,7 @@ import json
 import os
 from datetime import datetime
 from typing import Any
+from urllib.parse import unquote
 
 from dynamodb.keys import OperationalContext
 from dynamodb.operational_repository import OperationalRepository
@@ -20,7 +21,7 @@ def update_machine_rate(event: dict[str, Any]) -> dict[str, Any]:
     try:
         path = event.get("pathParameters") or {}
         context = OperationalContext(os.environ["DEFAULT_ORGANIZATION_ID"], path.get("year"), path.get("week"))
-        machine = str(path.get("machine", "")).strip()
+        machine = unquote(str(path.get("machine", ""))).strip()
         body = _json_body(event)
         rate = int(body.get("rate", 0))
         normalized = machine.upper()
