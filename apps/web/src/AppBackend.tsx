@@ -46,6 +46,7 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
   const weekIdRef = useRef('')
   const loadedWeekIds = useRef(new Set<string>())
   const initialWeekSelected = useRef(false)
+  const inFlightWeekRefreshes = useRef(new Set<string>())
   // A background refresh can complete while a rate PATCH is still in flight.
   // Keep the operator's selected rate authoritative until DynamoDB returns
   // that same value, instead of briefly reverting the selector to its default.
@@ -109,9 +110,21 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
 
   const loadWeek = useCallback(async (id: string, force = false) => {
     if (!id || (!force && loadedWeekIds.current.has(id))) return
-    const loaded = mergePendingMachineRates(await fetchWeek(id, session.idToken) as OperationalWeek)
-    loadedWeekIds.current.add(id)
-    setWeeks((items) => [...items.filter((item) => item.id !== id), loaded].sort((left, right) => Number(left.id) - Number(right.id)))
+    if (inFlightWeekRefreshes.current.has(id)) return
+    inFlightWeekRefreshes.current.add(id)
+    try {
+      const loaded = mergePendingMachineRates(await fetchWeek(id, session.idToken) as OperationalWeek)
+      loadedWeekIds.current.add(id)
+      setWeeks((items) => {
+        const current = items.find((item) => item.id === id)
+        // The five-second check returns the whole week. Keep the existing UI
+        // untouched when no operational data has actually changed.
+        if (current && JSON.stringify(current) === JSON.stringify(loaded)) return items
+        return [...items.filter((item) => item.id !== id), loaded].sort((left, right) => Number(left.id) - Number(right.id))
+      })
+    } finally {
+      inFlightWeekRefreshes.current.delete(id)
+    }
   }, [mergePendingMachineRates, session.idToken])
 
   const refresh = useCallback(async () => {
