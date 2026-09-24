@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal
+import hashlib
 import os
 from typing import Any
 import json
@@ -312,6 +313,30 @@ class OperationalRepository:
             "queuePlan": _queue_plan_response(queue_plan_item),
             "projectionRequirements": [item for item in items if item.get("entityType") == "PROJECTION"],
         }
+
+    def week_version(self, context: OperationalContext) -> str:
+        """Return a compact change token without building the full UI model."""
+        from boto3.dynamodb.conditions import Key
+
+        entries: list[dict[str, str]] = []
+        for partition_key in (build_markets_pk(context), build_week_pk(context)):
+            kwargs: dict[str, Any] = {
+                "KeyConditionExpression": Key("pk").eq(partition_key),
+                "ProjectionExpression": "sk, entityType, createdAt, updatedAt",
+            }
+            while True:
+                response = self._table.query(**kwargs)
+                entries.extend({
+                    "sk": str(item.get("sk", "")),
+                    "entityType": str(item.get("entityType", "")),
+                    "createdAt": str(item.get("createdAt", "")),
+                    "updatedAt": str(item.get("updatedAt", "")),
+                } for item in response.get("Items", []))
+                if not response.get("LastEvaluatedKey"):
+                    break
+                kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+        payload = json.dumps(sorted(entries, key=lambda item: item["sk"]), separators=(",", ":"), sort_keys=True)
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     def update_machine_rate(self, context: OperationalContext, machine: str, rate: int, updated_by: str) -> dict[str, Any]:
         """Persist the active rate used for all remaining work on one machine."""

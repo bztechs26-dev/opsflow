@@ -23,6 +23,9 @@ def read_operations(event: dict[str, Any]) -> dict[str, Any]:
     if path == "/weeks/{week}":
         week = (event.get("pathParameters") or {}).get("week", "")
         return _response(200, repository.week_data(OperationalContext(organization_id, year, week)))
+    if path == "/weeks/{week}/version":
+        week = (event.get("pathParameters") or {}).get("week", "")
+        return _response(200, {"version": repository.week_version(OperationalContext(organization_id, year, week))})
     if path == "/projections":
         week = query.get("week", "")
         if not week:

@@ -215,7 +215,12 @@ export class OpsflowFoundationStack extends cdk.Stack {
       authorizationType: apigateway.AuthorizationType.COGNITO,
       authorizer: apiAuthorizer,
     });
-    weeksResource.addResource('{week}').addMethod('GET', new apigateway.LambdaIntegration(healthFunction), {
+    const weekResource = weeksResource.addResource('{week}');
+    weekResource.addMethod('GET', new apigateway.LambdaIntegration(healthFunction), {
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+      authorizer: apiAuthorizer,
+    });
+    weekResource.addResource('version').addMethod('GET', new apigateway.LambdaIntegration(healthFunction), {
       authorizationType: apigateway.AuthorizationType.COGNITO,
       authorizer: apiAuthorizer,
     });

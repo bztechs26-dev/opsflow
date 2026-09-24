@@ -37,7 +37,7 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         log_event("upload-url-requested", requestId=request_id, documentType=(event.get("pathParameters") or {}).get("documentType"))
         return create_upload_url(event)
 
-    if event.get("httpMethod") == "GET" and event.get("resource") in {"/weeks", "/weeks/{week}", "/projections", "/imports/{importId}"}:
+    if event.get("httpMethod") == "GET" and event.get("resource") in {"/weeks", "/weeks/{week}", "/weeks/{week}/version", "/projections", "/imports/{importId}"}:
         return read_operations(event)
 
     if event.get("httpMethod") == "PATCH" and event.get("resource") == "/production/{year}/{week}/{area}/{recordId}/status":

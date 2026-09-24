@@ -120,6 +120,13 @@ export async function fetchWeek(week: string, token: string) {
   return response.json()
 }
 
+export async function fetchWeekVersion(week: string, token: string) {
+  const response = await request(`/weeks/${encodeURIComponent(week)}/version?year=${operationalYear}`, token)
+  const data = await response.json() as { version?: string; message?: string }
+  if (!response.ok || !data.version) throw new Error(data.message ?? 'Could not check for operational updates.')
+  return data.version
+}
+
 export type ProjectionMarket = { market: string; productionSourceArea: string; productionSourceWeek: number; mappings: Record<string, string[]> }
 
 export async function fetchProjectionMarkets(week: string, token: string): Promise<ProjectionMarket[]> {

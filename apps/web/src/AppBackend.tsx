@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { clearSession, continueSession as continueSessionApi, fetchWeek, fetchWeeks, loadSession, moveProductionZip as moveProductionZipApi, operationalYear, type Session, updateMachineRate as updateMachineRateApi, updateProductionStatus as updateProductionStatusApi, updateQueuePlan as updateQueuePlanApi, updateShippingHubAssignment as updateShippingHubAssignmentApi, updateShippingStatus as updateShippingStatusApi, uploadWorkbook } from './api/opsflow'
+import { clearSession, continueSession as continueSessionApi, fetchWeek, fetchWeekVersion, fetchWeeks, loadSession, moveProductionZip as moveProductionZipApi, operationalYear, type Session, updateMachineRate as updateMachineRateApi, updateProductionStatus as updateProductionStatusApi, updateQueuePlan as updateQueuePlanApi, updateShippingHubAssignment as updateShippingHubAssignmentApi, updateShippingStatus as updateShippingStatusApi, uploadWorkbook } from './api/opsflow'
 import { AppShell } from './components/AppShell'
 import { SignIn } from './components/SignIn'
 import { machineRateKey } from './data/machineCapacity'
@@ -47,6 +47,7 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
   const loadedWeekIds = useRef(new Set<string>())
   const initialWeekSelected = useRef(false)
   const inFlightWeekRefreshes = useRef(new Set<string>())
+  const knownWeekVersions = useRef(new Map<string, string>())
   // A background refresh can complete while a rate PATCH is still in flight.
   // Keep the operator's selected rate authoritative until DynamoDB returns
   // that same value, instead of briefly reverting the selector to its default.
@@ -113,7 +114,9 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
     if (inFlightWeekRefreshes.current.has(id)) return
     inFlightWeekRefreshes.current.add(id)
     try {
+      const version = await fetchWeekVersion(id, session.idToken)
       const loaded = mergePendingMachineRates(await fetchWeek(id, session.idToken) as OperationalWeek)
+      knownWeekVersions.current.set(id, version)
       loadedWeekIds.current.add(id)
       setWeeks((items) => {
         const current = items.find((item) => item.id === id)
@@ -150,8 +153,12 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
 
   const refreshCurrentWeek = useCallback(async () => {
     const selected = weekIdRef.current
-    if (selected) await loadWeek(selected, true)
-  }, [loadWeek])
+    if (!selected) return
+    const version = await fetchWeekVersion(selected, session.idToken)
+    if (knownWeekVersions.current.get(selected) === version) return
+    knownWeekVersions.current.set(selected, version)
+    await loadWeek(selected, true)
+  }, [loadWeek, session.idToken])
 
   useEffect(() => { void refresh().catch((error) => setMessage(error instanceof Error ? error.message : 'Could not load operations.')) }, [refresh])
 
