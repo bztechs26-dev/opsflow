@@ -32,6 +32,8 @@ export function ProductionPage({ records, onStatusChange, onMove, onNotesChange,
   const [isMachineProgressOpen, setIsMachineProgressOpen] = useState(false)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [movingId, setMovingId] = useState<string | null>(null)
+  const [isSavingMachineRate, setIsSavingMachineRate] = useState(false)
+  const [machineRateNotice, setMachineRateNotice] = useState('')
   const [renderLimit, setRenderLimit] = useState(initialRenderLimit)
 
   const areaRecords = records.filter((record) => area === 'ALL' || recordArea(record) === area)
@@ -65,6 +67,20 @@ export function ProductionPage({ records, onStatusChange, onMove, onNotesChange,
     finally { setMovingId(null) }
   }
 
+  const changeMachineRate = async (rate: number) => {
+    if (machine === 'ALL' || !onMachineRateChange || rate === selectedMachineRate) return
+    setIsSavingMachineRate(true)
+    setMachineRateNotice('Saving…')
+    try {
+      await onMachineRateChange(machine, rate)
+      setMachineRateNotice('Saved')
+    } catch {
+      setMachineRateNotice('Not saved')
+    } finally {
+      setIsSavingMachineRate(false)
+    }
+  }
+
   return <section className="page">
     <div className="page-heading"><div><h1>Production</h1><p>Track ZIP-level production readiness by operational area and machine.</p></div></div>
     <div className="area-tabs">{areas.map((item) => <button key={item.id} className={area === item.id ? 'area-tab active' : 'area-tab'} onClick={() => { setArea(item.id); setMachine('ALL'); setRenderLimit(initialRenderLimit) }}>{item.label}<span>{item.id === 'ALL' ? records.length : records.filter((record) => recordArea(record) === item.id).length}</span></button>)}</div>
@@ -76,7 +92,7 @@ export function ProductionPage({ records, onStatusChange, onMove, onNotesChange,
         <span><strong>{visible.filter((record) => record.status === 'BLOCKED').length}</strong> short</span>
         <label className="production-search">Search ZIP / ATZ<input value={query} onChange={(event) => { setQuery(event.target.value); setRenderLimit(initialRenderLimit) }} placeholder="e.g. 02138 C1" /></label>
         <label className="machine-filter">Machine<select className="week-select" value={machine} onChange={(event) => { setMachine(event.target.value); setRenderLimit(initialRenderLimit) }}><option value="ALL">All machines</option>{machines.map((name) => <option key={name} value={name}>{name}</option>)}</select></label>
-        {machine !== 'ALL' && selectedMachineRate && <label className="machine-filter">Hourly rate<select className="week-select" value={selectedMachineRate} onChange={(event) => void onMachineRateChange?.(machine, Number(event.target.value))}>{allowedMachineRates(machine).map((rate) => <option key={rate} value={rate}>{formatMachineRate(rate)}</option>)}</select></label>}
+        {machine !== 'ALL' && selectedMachineRate && <label className="machine-filter machine-rate-control"><span>Run rate</span><div><select className="week-select" value={selectedMachineRate} disabled={isSavingMachineRate} aria-label={`Run rate for ${machine}`} onChange={(event) => void changeMachineRate(Number(event.target.value))}>{allowedMachineRates(machine).map((rate) => <option key={rate} value={rate}>{formatMachineRate(rate)}</option>)}</select><small className={machineRateNotice === 'Not saved' ? 'rate-save-error' : ''}>{machineRateNotice || 'per hour'}</small></div></label>}
       </div>
       <section className="panel selected-machine"><div className="panel-header"><h2>{machine === 'ALL' ? 'All machines' : machine} progress</h2><span>{complete} / {visible.length} ZIPs processed</span></div><div className="progress-track"><div className="progress-fill" style={{ width: `${percent}%` }} /></div><div className="progress-label"><span>{percent}% processed</span><span>{visible.length - complete} remaining</span></div>{selectedMachineCapacity && <div className="machine-time-summary"><strong>{formatRunHours(selectedMachineCapacity.estimatedHours)}</strong><span>estimated time remaining for runnable ZIPs</span></div>}</section>
     </section>
