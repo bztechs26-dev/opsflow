@@ -7,6 +7,7 @@
 .machine-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
 .machine-item { min-width: 0; }
 .machine-runtime { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 10px; padding-top: 9px; border-top: 1px solid #e5ebf2; }.machine-runtime strong { color: #285c9f; font-size: 14px; }.machine-runtime span { color: #667085; font-size: 11px; }.machine-exceptions { margin-top: 7px; color: #b54708; font-size: 11px; font-weight: 650; }
+.machine-queue-line { display: flex; justify-content: space-between; gap: 8px; margin-top: 9px; color: #344054; font-size: 12px; }.machine-queue-line strong { color: #172033; }.machine-queue-line span { color: #285c9f; font-weight: 650; text-align: right; }.machine-market-queue { margin-top: 4px; overflow: hidden; color: #667085; font-size: 11px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
 .machine-time-summary { display: flex; align-items: baseline; gap: 8px; margin-top: 10px; color: #285c9f; }.machine-time-summary strong { font-size: 15px; }.machine-time-summary span { color: #667085; font-size: 12px; }.machine-time-summary small { margin-left: auto; color: #b54708; font-size: 11px; font-weight: 650; }
 .modal-backdrop { position: fixed; z-index: 10; inset: 0; display: grid; place-items: center; padding: 20px; background: rgb(15 23 42 / 45%); }
 .upload-modal { width: min(100%, 460px); display: grid; gap: 16px; padding: 24px; border-radius: 10px; background: #fff; box-shadow: 0 20px 40px rgb(0 0 0 / 22%); }

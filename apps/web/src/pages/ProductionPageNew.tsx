@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { allowedMachineRates, capacityForMachine, configuredMachineRate, formatMachineRate, formatRunHours, machineRate } from '../data/machineCapacity'
+import { allowedMachineRates, capacityForMachine, configuredMachineRate, formatMachineRate, formatRunHours, machineMarketQueue, machineRate } from '../data/machineCapacity'
 import { CapacityStaffingPlanner } from '../components/CapacityStaffingPlanner'
 import type { ProductionRecord, ProductionStatus, QueuePlan } from '../types/operations'
 import './ProductionPage.css'
@@ -112,7 +112,9 @@ function MarketTable({ market, records, machines, savingId, movingId, onStatusCh
 function MachineCard({ name, records, activeRate }: { name: string; records: ProductionRecord[]; activeRate?: number }) {
   const capacity = capacityForMachine(name, records, activeRate)
   if (!capacity) return null
-  return <div className="machine-item"><div className="progress-label"><span>{name}</span><strong>{capacity.percentComplete}%</strong></div><div className="progress-track"><div className="progress-fill" style={{ width: `${capacity.percentComplete}%` }} /></div><div className="metric-detail"><strong>{capacity.runnablePieces.toLocaleString()} pcs runnable</strong> · {formatMachineRate(capacity.rate)}/hr</div><div className="machine-runtime"><strong>{formatRunHours(capacity.estimatedHours)}</strong></div><div className="metric-detail">{capacity.completePieces.toLocaleString()} of {capacity.totalPieces.toLocaleString()} pcs processed</div></div>
+  const queue = machineMarketQueue(records)
+  const marketText = queue.map((item) => `${item.market} ${item.pieces.toLocaleString()} pcs`).join(' · ')
+  return <div className="machine-item"><div className="progress-label"><span>{name}</span><strong>{capacity.percentComplete}%</strong></div><div className="progress-track"><div className="progress-fill" style={{ width: `${capacity.percentComplete}%` }} /></div><div className="machine-queue-line"><strong>{capacity.runnablePieces.toLocaleString()} pcs remaining</strong><span>{queue.length ? `Next: ${queue[0].market}` : 'Queue complete'}</span></div>{queue.length > 0 && <div className="machine-market-queue" title={marketText}>{marketText}</div>}<div className="machine-runtime"><strong>{formatRunHours(capacity.estimatedHours)}</strong><span>{formatMachineRate(capacity.rate)}/hr</span></div><div className="metric-detail">{capacity.completePieces.toLocaleString()} of {capacity.totalPieces.toLocaleString()} pcs processed</div></div>
 }
 
 function uniqueMachines(records: ProductionRecord[]) { return [...new Set(records.map((record) => record.machine))].filter((name) => machineRate(name) > 0).sort() }

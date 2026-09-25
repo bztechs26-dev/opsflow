@@ -1,6 +1,7 @@
 import type { ProductionRecord } from '../types/operations'
 
 export type MachineCapacity = { machine: string; rate: number; totalPieces: number; completePieces: number; runnablePieces: number; blockedPieces: number; skippedPieces: number; estimatedHours?: number; percentComplete: number }
+export type MachineMarketQueue = { market: string; pieces: number; firstQueueOrder: number }
 
 // Workbooks are produced by more than one system.  Use one stable key for a
 // machine rate so harmless differences in casing or spaces cannot make a
@@ -49,6 +50,19 @@ export function capacityForMachine(machine: string, records: ProductionRecord[],
   const skippedPieces = records.filter((record) => record.status === 'SKIPPED').reduce((total, record) => total + record.volume, 0)
   const runnablePieces = records.filter((record) => !['COMPLETE', 'BLOCKED', 'SKIPPED'].includes(record.status)).reduce((total, record) => total + record.volume, 0)
   return { machine, rate, totalPieces, completePieces, runnablePieces, blockedPieces, skippedPieces, estimatedHours: runnablePieces ? runnablePieces / rate : undefined, percentComplete: totalPieces ? Math.round(completePieces / totalPieces * 100) : 0 }
+}
+
+export function machineMarketQueue(records: ProductionRecord[]): MachineMarketQueue[] {
+  const grouped = new Map<string, MachineMarketQueue>()
+  for (const record of records) {
+    if (['COMPLETE', 'BLOCKED', 'SKIPPED'].includes(record.status)) continue
+    const market = record.market || 'Unassigned market'
+    const current = grouped.get(market)
+    grouped.set(market, current
+      ? { ...current, pieces: current.pieces + record.volume, firstQueueOrder: Math.min(current.firstQueueOrder, record.queueOrder) }
+      : { market, pieces: record.volume, firstQueueOrder: record.queueOrder })
+  }
+  return [...grouped.values()].sort((left, right) => left.firstQueueOrder - right.firstQueueOrder || right.pieces - left.pieces)
 }
 
 export function formatRunHours(hours: number | undefined) {
