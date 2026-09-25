@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import { allowedMachineRates, capacityForMachine, configuredMachineRate, formatMachineRate, formatRunHours, machineRate } from '../data/machineCapacity'
-import { StaffingPlannerEfficient } from '../components/StaffingPlannerEfficient'
-import { QueueProjection } from '../components/QueueProjection'
+import { CapacityStaffingPlanner } from '../components/CapacityStaffingPlanner'
 import type { ProductionRecord, ProductionStatus, QueuePlan } from '../types/operations'
 import './ProductionPage.css'
 
@@ -80,7 +79,7 @@ export function ProductionPage({ records, queuePlan, onStatusChange, onMove, onN
     }
   }
 
-  if (productionView === 'staffing') return <section className="page"><div className="page-heading"><div><h1>Production</h1><p>Plan expected pieces and crew requirements by machine and shift.</p></div></div>{productionNavigation}<StaffingPlannerEfficient records={records} plan={queuePlan} onChange={onQueuePlanChange}/><QueueProjection records={records} machine={records[0]?.machine ?? ''} plan={queuePlan} onChange={onQueuePlanChange}/></section>
+  if (productionView === 'staffing') return <section className="page"><div className="page-heading"><div><h1>Capacity & staffing</h1><p>Plan one machine at a time, then compare staffing needs across the operation.</p></div></div>{productionNavigation}<CapacityStaffingPlanner records={records} plan={queuePlan} onChange={onQueuePlanChange}/></section>
 
   return <section className="page">
     <div className="page-heading"><div><h1>Production</h1><p>Track ZIP-level production readiness by operational area and machine.</p></div></div>
