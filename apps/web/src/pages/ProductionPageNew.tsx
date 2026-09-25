@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { startTransition, useMemo, useState } from 'react'
 import { allowedMachineRates, capacityForMachine, configuredMachineRate, formatMachineRate, formatRunHours, machineMarketQueue, machineRate } from '../data/machineCapacity'
 import { CapacityStaffingPlanner } from '../components/CapacityStaffingPlanner'
 import type { ProductionRecord, ProductionStatus, QueuePlan } from '../types/operations'
@@ -35,6 +35,7 @@ export function ProductionPage({ records, queuePlan, onStatusChange, onMove, onN
   const [movingId, setMovingId] = useState<string | null>(null)
   const [isSavingMachineRate, setIsSavingMachineRate] = useState(false)
   const [renderLimit, setRenderLimit] = useState(initialRenderLimit)
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, ProductionStatus>>({})
 
   const areaRecords = records.filter((record) => area === 'ALL' || recordArea(record) === area)
   const machines = useMemo(() => uniqueMachines(areaRecords), [areaRecords])
@@ -55,7 +56,17 @@ export function ProductionPage({ records, queuePlan, onStatusChange, onMove, onN
   const selectedMachineCapacity = machine === 'ALL' ? undefined : capacityForMachine(machine, visible, selectedMachineRate)
   const productionNavigation = <nav className="production-subnav" aria-label="Production views"><button className={productionView === 'zip' ? 'active' : ''} type="button" onClick={() => setProductionView('zip')}>ZIP operations</button><button className={productionView === 'staffing' ? 'active' : ''} type="button" onClick={() => setProductionView('staffing')}>Capacity & staffing</button></nav>
 
-  const changeStatus = (record: ProductionRecord, status: ProductionStatus) => { void Promise.resolve(onStatusChange(record.id, status)).catch(() => undefined) }
+  const changeStatus = (record: ProductionRecord, status: ProductionStatus) => {
+    if (status === record.status) return
+    // Paint the clerk's selection before the shared week model causes the
+    // hidden dashboard and projection modules to recalculate.
+    setStatusOverrides((current) => ({ ...current, [record.id]: status }))
+    startTransition(() => {
+      void Promise.resolve(onStatusChange(record.id, status))
+        .then(() => setStatusOverrides((current) => { const next = { ...current }; delete next[record.id]; return next }))
+        .catch(() => setStatusOverrides((current) => { const next = { ...current }; delete next[record.id]; return next }))
+    })
+  }
 
   const changeMachine = async (record: ProductionRecord, targetMachine: string) => {
     if (!onMove || targetMachine === record.machine) return
@@ -93,15 +104,15 @@ export function ProductionPage({ records, queuePlan, onStatusChange, onMove, onN
       <section className="panel selected-machine"><div className="panel-header"><h2>{machine === 'ALL' ? 'All machines' : machine} progress</h2><span>{complete} / {visible.length} ZIPs processed</span></div><div className="progress-track"><div className="progress-fill" style={{ width: `${percent}%` }} /></div><div className="progress-label"><span>{percent}% processed</span><span>{visible.length - complete} remaining</span></div>{selectedMachineCapacity && <div className="machine-time-summary"><strong>{formatRunHours(selectedMachineCapacity.estimatedHours)}</strong><span>estimated time remaining for runnable ZIPs</span></div>}</section>
     </section>
     <section className="panel machine-progress"><button className="machine-progress-toggle" type="button" onClick={() => setIsMachineProgressOpen((open) => !open)}><span><strong>Machine progress</strong><small>{machines.length} machines in this area</small></span><span className="toggle-label">{isMachineProgressOpen ? 'Hide details' : 'Show details'}<span aria-hidden="true">{isMachineProgressOpen ? '-' : '+'}</span></span></button>{isMachineProgressOpen && <div className="machine-grid">{machines.map((name) => <MachineCard key={name} name={name} records={areaRecords.filter((record) => record.machine === name)} activeRate={configuredMachineRate(machineRates, name)} />)}</div>}</section>
-    {markets.map((market) => <MarketTable key={market} market={market} records={renderedRecords.filter((record) => record.market === market)} machines={availableMachines} movingId={movingId} onStatusChange={changeStatus} onMachineChange={changeMachine} onNotesChange={onNotesChange} />)}
+    {markets.map((market) => <MarketTable key={market} market={market} records={renderedRecords.filter((record) => record.market === market)} machines={availableMachines} movingId={movingId} statusOverrides={statusOverrides} onStatusChange={changeStatus} onMachineChange={changeMachine} onNotesChange={onNotesChange} />)}
     {visible.length > renderedRecords.length && <section className="panel production-result-limit"><span>Showing {renderedRecords.length.toLocaleString()} of {visible.length.toLocaleString()} ZIP records</span><button className="secondary-button" type="button" onClick={() => setRenderLimit((current) => current + renderLimitStep)}>Load {Math.min(renderLimitStep, visible.length - renderedRecords.length).toLocaleString()} more</button></section>}
     {!visible.length && <section className="panel empty-page"><h2>No ZIP / ATZ records found</h2><p>Try a different ZIP/ATZ search, machine, or operational-area filter.</p></section>}
   </section>
 }
 
-function MarketTable({ market, records, machines, movingId, onStatusChange, onMachineChange, onNotesChange }: { market: string; records: ProductionRecord[]; machines: string[]; movingId: string | null; onStatusChange: (record: ProductionRecord, status: ProductionStatus) => void; onMachineChange: (record: ProductionRecord, targetMachine: string) => Promise<void>; onNotesChange: (id: string, notes: string) => void }) {
+function MarketTable({ market, records, machines, movingId, statusOverrides, onStatusChange, onMachineChange, onNotesChange }: { market: string; records: ProductionRecord[]; machines: string[]; movingId: string | null; statusOverrides: Record<string, ProductionStatus>; onStatusChange: (record: ProductionRecord, status: ProductionStatus) => void; onMachineChange: (record: ProductionRecord, targetMachine: string) => Promise<void>; onNotesChange: (id: string, notes: string) => void }) {
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({})
-  return <section className="market-section"><div className="market-header"><h2>{market}</h2><span>{records.length} ZIP records</span></div><div className="panel table-wrap"><table className="data-table"><thead><tr><th>ZIP / ATZ</th><th>Scheduled machine</th><th>Moved machine</th><th>Quantity</th><th>Job number</th><th>Dashboard status</th><th>Notes</th><th>Update status</th></tr></thead><tbody>{records.map((record) => { const locked = isProcessed(record); const note = noteDrafts[record.id] ?? record.notes ?? ''; return <tr key={record.id} className={record.movedAt ? 'zip-moved-row' : ''}><td>{record.zip}{record.movedAt && <span className="moved-flag">MOVED</span>}</td><td>{record.scheduledMachine || record.machine}</td><td>{machines.length ? <select className="status-select" value={record.machine} disabled={locked || movingId === record.id} aria-label={`Move ${record.zip} to another machine`} onChange={(event) => void onMachineChange(record, event.target.value)}>{machines.map((machine) => <option key={machine} value={machine}>{machine}</option>)}</select> : record.machine}{locked && <span className="locked-note">Processed</span>}</td><td>{record.volume.toLocaleString()} pcs</td><td>{record.jobNumber || '-'}</td><td><StatusBadge status={record.status} /></td><td><input className="notes-input" maxLength={100} placeholder="Add note" value={note} onChange={(event) => setNoteDrafts((drafts) => ({ ...drafts, [record.id]: event.target.value }))} onBlur={() => { if (note !== (record.notes ?? '')) onNotesChange(record.id, note) }} /></td><td><select className="status-select" value={record.status} onChange={(event) => onStatusChange(record, event.target.value as ProductionStatus)}>{statuses.map((status) => <option key={status} value={status}>{formatStatus(status)}</option>)}</select></td></tr> })}</tbody></table></div></section>
+  return <section className="market-section"><div className="market-header"><h2>{market}</h2><span>{records.length} ZIP records</span></div><div className="panel table-wrap"><table className="data-table"><thead><tr><th>ZIP / ATZ</th><th>Scheduled machine</th><th>Moved machine</th><th>Quantity</th><th>Job number</th><th>Dashboard status</th><th>Notes</th><th>Update status</th></tr></thead><tbody>{records.map((record) => { const status = statusOverrides[record.id] ?? record.status; const locked = status === 'COMPLETE' || status === 'BLOCKED'; const note = noteDrafts[record.id] ?? record.notes ?? ''; return <tr key={record.id} className={record.movedAt ? 'zip-moved-row' : ''}><td>{record.zip}{record.movedAt && <span className="moved-flag">MOVED</span>}</td><td>{record.scheduledMachine || record.machine}</td><td>{machines.length ? <select className="status-select" value={record.machine} disabled={locked || movingId === record.id} aria-label={`Move ${record.zip} to another machine`} onChange={(event) => void onMachineChange(record, event.target.value)}>{machines.map((machine) => <option key={machine} value={machine}>{machine}</option>)}</select> : record.machine}{locked && <span className="locked-note">Processed</span>}</td><td>{record.volume.toLocaleString()} pcs</td><td>{record.jobNumber || '-'}</td><td><StatusBadge status={status} /></td><td><input className="notes-input" maxLength={100} placeholder="Add note" value={note} onChange={(event) => setNoteDrafts((drafts) => ({ ...drafts, [record.id]: event.target.value }))} onBlur={() => { if (note !== (record.notes ?? '')) onNotesChange(record.id, note) }} /></td><td><select className="status-select" value={status} onChange={(event) => onStatusChange(record, event.target.value as ProductionStatus)}>{statuses.map((option) => <option key={option} value={option}>{formatStatus(option)}</option>)}</select></td></tr> })}</tbody></table></div></section>
 }
 
 function MachineCard({ name, records, activeRate }: { name: string; records: ProductionRecord[]; activeRate?: number }) {
