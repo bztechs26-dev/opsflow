@@ -238,26 +238,17 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
       setMessage('This production record is missing its operational identity. Refresh and try again.')
       return
     }
-    const priorStatus = record.status
     const pendingKey = `${weekId}:${id}`
     pendingProductionStatuses.current.set(pendingKey, status)
-    // Reflect a confirmed clerk action at once; the API response below remains
-    // authoritative and replaces this value if needed.
-    setWeeks((items) => items.map((item) => item.id === weekId ? {
-      ...item, productionRecords: item.productionRecords.map((current) => current.id === id ? { ...current, status } : current),
-    } : item))
     try {
-      const updated = await updateProductionStatusApi(
+      await updateProductionStatusApi(
         week?.year ?? operationalYear, weekId, record.sourceArea, `record-${record.queueOrder}`, record.machine, record.zip, status, record.version, session.idToken,
-      ) as { status: ProductionStatus; version?: number }
-      setWeeks((items) => items.map((item) => item.id === weekId ? {
-        ...item, productionRecords: item.productionRecords.map((current) => current.id === id ? { ...current, status: updated.status ?? status, version: updated.version ?? current.version } : current),
-      } : item))
+      )
+      // ProductionPage keeps the operator's selection responsive. The normal
+      // five-second version check will retrieve the confirmed shared week,
+      // avoiding an expensive full-app redraw for every dropdown change.
     } catch (error) {
       pendingProductionStatuses.current.delete(pendingKey)
-      setWeeks((items) => items.map((item) => item.id === weekId ? {
-        ...item, productionRecords: item.productionRecords.map((current) => current.id === id ? { ...current, status: priorStatus } : current),
-      } : item))
       const message = error instanceof Error ? error.message : 'Could not update production status.'
       setMessage(message)
       throw error

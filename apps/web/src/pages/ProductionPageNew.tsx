@@ -1,4 +1,4 @@
-import { startTransition, useMemo, useState } from 'react'
+import { startTransition, useEffect, useMemo, useState } from 'react'
 import { allowedMachineRates, capacityForMachine, configuredMachineRate, formatMachineRate, formatRunHours, machineMarketQueue, machineRate } from '../data/machineCapacity'
 import { CapacityStaffingPlanner } from '../components/CapacityStaffingPlanner'
 import type { ProductionRecord, ProductionStatus, QueuePlan } from '../types/operations'
@@ -37,6 +37,23 @@ export function ProductionPage({ records, queuePlan, onStatusChange, onMove, onN
   const [renderLimit, setRenderLimit] = useState(initialRenderLimit)
   const [statusOverrides, setStatusOverrides] = useState<Record<string, ProductionStatus>>({})
 
+  useEffect(() => {
+    // Remove a local selection only after the shared refresh contains that
+    // same confirmed status. This lets operators continue through ZIPs while
+    // the full Dashboard and Projection data refresh in the background.
+    setStatusOverrides((current) => {
+      let changed = false
+      const next = { ...current }
+      for (const [id, status] of Object.entries(current)) {
+        if (records.find((record) => record.id === id)?.status === status) {
+          delete next[id]
+          changed = true
+        }
+      }
+      return changed ? next : current
+    })
+  }, [records])
+
   const areaRecords = records.filter((record) => area === 'ALL' || recordArea(record) === area)
   const machines = useMemo(() => uniqueMachines(areaRecords), [areaRecords])
   const availableMachines = useMemo(() => uniqueMachines(records), [records])
@@ -63,7 +80,6 @@ export function ProductionPage({ records, queuePlan, onStatusChange, onMove, onN
     setStatusOverrides((current) => ({ ...current, [record.id]: status }))
     startTransition(() => {
       void Promise.resolve(onStatusChange(record.id, status))
-        .then(() => setStatusOverrides((current) => { const next = { ...current }; delete next[record.id]; return next }))
         .catch(() => setStatusOverrides((current) => { const next = { ...current }; delete next[record.id]; return next }))
     })
   }
