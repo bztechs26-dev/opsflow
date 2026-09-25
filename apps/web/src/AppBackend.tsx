@@ -48,6 +48,7 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
   const initialWeekSelected = useRef(false)
   const inFlightWeekRefreshes = useRef(new Set<string>())
   const knownWeekVersions = useRef(new Map<string, string>())
+  const pendingProductionStatuses = useRef(new Map<string, ProductionStatus>())
   // A background refresh can complete while a rate PATCH is still in flight.
   // Keep the operator's selected rate authoritative until DynamoDB returns
   // that same value, instead of briefly reverting the selector to its default.
@@ -68,6 +69,23 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
       }
     }
     return hasPending ? { ...loaded, machineRates: rates } : loaded
+  }, [])
+
+  const mergePendingProductionStatuses = useCallback((loaded: OperationalWeek): OperationalWeek => {
+    const prefix = `${loaded.id}:`
+    let hasPending = false
+    const productionRecords = loaded.productionRecords.map((record) => {
+      const pendingKey = `${prefix}${record.id}`
+      const pendingStatus = pendingProductionStatuses.current.get(pendingKey)
+      if (!pendingStatus) return record
+      if (record.status === pendingStatus) {
+        pendingProductionStatuses.current.delete(pendingKey)
+        return record
+      }
+      hasPending = true
+      return { ...record, status: pendingStatus }
+    })
+    return hasPending ? { ...loaded, productionRecords } : loaded
   }, [])
 
   useEffect(() => {
@@ -115,7 +133,7 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
     inFlightWeekRefreshes.current.add(id)
     try {
       const version = await fetchWeekVersion(id, session.idToken)
-      const loaded = mergePendingMachineRates(await fetchWeek(id, session.idToken) as OperationalWeek)
+      const loaded = mergePendingProductionStatuses(mergePendingMachineRates(await fetchWeek(id, session.idToken) as OperationalWeek))
       knownWeekVersions.current.set(id, version)
       loadedWeekIds.current.add(id)
       setWeeks((items) => {
@@ -128,7 +146,7 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
     } finally {
       inFlightWeekRefreshes.current.delete(id)
     }
-  }, [mergePendingMachineRates, session.idToken])
+  }, [mergePendingMachineRates, mergePendingProductionStatuses, session.idToken])
 
   const refresh = useCallback(async () => {
     const ids = await fetchWeeks(session.idToken)
@@ -221,6 +239,8 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
       return
     }
     const priorStatus = record.status
+    const pendingKey = `${weekId}:${id}`
+    pendingProductionStatuses.current.set(pendingKey, status)
     // Reflect a confirmed clerk action at once; the API response below remains
     // authoritative and replaces this value if needed.
     setWeeks((items) => items.map((item) => item.id === weekId ? {
@@ -234,6 +254,7 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
         ...item, productionRecords: item.productionRecords.map((current) => current.id === id ? { ...current, status: updated.status ?? status, version: updated.version ?? current.version } : current),
       } : item))
     } catch (error) {
+      pendingProductionStatuses.current.delete(pendingKey)
       setWeeks((items) => items.map((item) => item.id === weekId ? {
         ...item, productionRecords: item.productionRecords.map((current) => current.id === id ? { ...current, status: priorStatus } : current),
       } : item))
