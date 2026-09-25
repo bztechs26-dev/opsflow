@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { clearSession, continueSession as continueSessionApi, fetchWeek, fetchWeekVersion, fetchWeeks, loadSession, moveProductionZip as moveProductionZipApi, operationalYear, type Session, updateMachineRate as updateMachineRateApi, updateProductionStatus as updateProductionStatusApi, updateQueuePlan as updateQueuePlanApi, updateShippingHubAssignment as updateShippingHubAssignmentApi, updateShippingStatus as updateShippingStatusApi, uploadWorkbook } from './api/opsflow'
 import { AppShell } from './components/AppShell'
 import { SignIn } from './components/SignIn'
@@ -21,6 +21,13 @@ const idleWarningMs = 60 * 60 * 1000
 const idleSignOutMs = 65 * 60 * 1000
 const shiftWarningMs = 11.75 * 60 * 60 * 1000
 const shiftSignOutMs = 12 * 60 * 60 * 1000
+
+// Keep a module mounted so its filters and open details survive navigation,
+// but do not make hidden modules recalculate a full operational week after
+// every background refresh. They receive the newest data on activation.
+const KeepAliveModule = memo(function KeepAliveModule({ active, children }: { active: boolean; children: ReactNode }) {
+  return <div hidden={!active}>{children}</div>
+}, (previous, next) => !previous.active && !next.active)
 
 export default function AppBackend() {
   const [session, setSession] = useState<Session | null>(loadSession)
@@ -374,10 +381,10 @@ function OperationsApp({ session, onSessionChange, onSignOut }: { session: Sessi
   const content = !week
     ? <section className="panel empty-page"><h2>No operational weeks loaded</h2><p>Upload a Production QA workbook or Bulk Plan to add an operational week.</p></section>
     : <>
-      <div hidden={page !== 'dashboard'}><DashboardPage loads={week.loads} records={week.productionRecords} machineRates={week.machineRates} /></div>
-      <div hidden={page !== 'production'}><ProductionPage records={week.productionRecords} queuePlan={week.queuePlan} machineRates={week.machineRates} onMachineRateChange={updateMachineRate} onStatusChange={updateProductionStatus} onMove={moveProductionZip} onNotesChange={updateProductionNotes} onQueuePlanChange={updateQueuePlan} /></div>
-      <div hidden={page !== 'shipping'}><ShippingPage loads={week.loads} onStatusChange={updateShippingStatus} onHubAssignmentChange={updateShippingHubAssignment} /></div>
-      <div hidden={page !== 'projection'}><ProjectionPage weeks={weeks} availableWeekIds={weekOptions} selectedWeekId={weekId} token={session.idToken} onDataChanged={refresh} onWeekSelected={selectWeek} onEnsureWeeksLoaded={ensureWeeksLoaded} /></div>
+      <KeepAliveModule active={page === 'dashboard'}><DashboardPage loads={week.loads} records={week.productionRecords} machineRates={week.machineRates} /></KeepAliveModule>
+      <KeepAliveModule active={page === 'production'}><ProductionPage records={week.productionRecords} queuePlan={week.queuePlan} machineRates={week.machineRates} onMachineRateChange={updateMachineRate} onStatusChange={updateProductionStatus} onMove={moveProductionZip} onNotesChange={updateProductionNotes} onQueuePlanChange={updateQueuePlan} /></KeepAliveModule>
+      <KeepAliveModule active={page === 'shipping'}><ShippingPage loads={week.loads} onStatusChange={updateShippingStatus} onHubAssignmentChange={updateShippingHubAssignment} /></KeepAliveModule>
+      <KeepAliveModule active={page === 'projection'}><ProjectionPage weeks={weeks} availableWeekIds={weekOptions} selectedWeekId={weekId} token={session.idToken} onDataChanged={refresh} onWeekSelected={selectWeek} onEnsureWeeksLoaded={ensureWeeksLoaded} /></KeepAliveModule>
     </>
 
   return <AppShell activePage={page} navigationItems={nav} onNavigate={navigate} operationalWeek={week?.label}>
