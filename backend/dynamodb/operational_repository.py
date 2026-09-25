@@ -405,9 +405,9 @@ class OperationalRepository:
             raise ValueError("The production ZIP was not found.")
         # Update just the nested status field.  The conditional ZIP check makes
         # sure a stale list position cannot update a different ZIP.
-        set_expression = f"#machine[{row_index}].#status = :status"
-        names = {"#machine": machine, "#status": "status", "#zip": "zip"}
-        values: dict[str, Any] = {":status": status, ":zip": zip_value}
+        set_expression = f"#machine[{row_index}].#status = :status, #itemUpdatedAt = :itemUpdatedAt"
+        names = {"#machine": machine, "#status": "status", "#zip": "zip", "#itemUpdatedAt": "updatedAt"}
+        values: dict[str, Any] = {":status": status, ":zip": zip_value, ":itemUpdatedAt": utc_now()}
         if notes is not None:
             set_expression += f", #machine[{row_index}].#notes = :notes"
             names["#notes"] = "notes"
@@ -467,10 +467,10 @@ class OperationalRepository:
         updated_target_rows = [*target_rows, moved_row]
         updated = self._table.update_item(
             Key=key,
-            UpdateExpression="SET #source = :sourceRows, #target = :targetRows",
+            UpdateExpression="SET #source = :sourceRows, #target = :targetRows, #itemUpdatedAt = :itemUpdatedAt",
             ConditionExpression=f"attribute_exists(pk) AND #source[{row_index}].#zip = :zip",
-            ExpressionAttributeNames={"#source": source_machine, "#target": target_machine, "#zip": "zip"},
-            ExpressionAttributeValues={":sourceRows": updated_source_rows, ":targetRows": updated_target_rows, ":zip": zip_value},
+            ExpressionAttributeNames={"#source": source_machine, "#target": target_machine, "#zip": "zip", "#itemUpdatedAt": "updatedAt"},
+            ExpressionAttributeValues={":sourceRows": updated_source_rows, ":targetRows": updated_target_rows, ":zip": zip_value, ":itemUpdatedAt": now},
             ReturnValues="ALL_NEW",
         )["Attributes"]
         current = next(row for row in updated[target_machine] if str(row.get("zip")) == zip_value)
@@ -494,9 +494,9 @@ class OperationalRepository:
         row_index = next((index for index, load in enumerate(loads) if isinstance(load, dict) and str(load.get("number") or "").strip() == normalized_number), None)
         if row_index is None:
             raise ValueError("The Bulk Plan load was not found.")
-        update_expression = f"SET #loads[{row_index}].#status = :status, #loads[{row_index}].#updatedBy = :updatedBy, #loads[{row_index}].#statusUpdatedAt = :statusUpdatedAt"
-        names = {"#loads": "loads", "#status": "status", "#number": "number", "#updatedBy": "updatedBy", "#statusUpdatedAt": "statusUpdatedAt"}
-        values: dict[str, Any] = {":status": status, ":number": normalized_number, ":updatedBy": updated_by, ":statusUpdatedAt": status_at or utc_now()}
+        update_expression = f"SET #loads[{row_index}].#status = :status, #loads[{row_index}].#updatedBy = :updatedBy, #loads[{row_index}].#statusUpdatedAt = :statusUpdatedAt, #itemUpdatedAt = :itemUpdatedAt"
+        names = {"#loads": "loads", "#status": "status", "#number": "number", "#updatedBy": "updatedBy", "#statusUpdatedAt": "statusUpdatedAt", "#itemUpdatedAt": "updatedAt"}
+        values: dict[str, Any] = {":status": status, ":number": normalized_number, ":updatedBy": updated_by, ":statusUpdatedAt": status_at or utc_now(), ":itemUpdatedAt": utc_now()}
         if status == "DISPATCHED":
             update_expression += f", #loads[{row_index}].#dispatchedAt = :dispatchedAt"
             names["#dispatchedAt"] = "dispatchedAt"
@@ -535,10 +535,10 @@ class OperationalRepository:
                 raise ValueError("Choose a Hub Linehaul trip from the same Hub & Spoke section.")
         updated = self._table.update_item(
             Key=key,
-            UpdateExpression=f"SET #loads[{spoke_index}].#assignedHubTrip = :hub, #loads[{spoke_index}].#updatedBy = :updatedBy",
+            UpdateExpression=f"SET #loads[{spoke_index}].#assignedHubTrip = :hub, #loads[{spoke_index}].#updatedBy = :updatedBy, #itemUpdatedAt = :itemUpdatedAt",
             ConditionExpression=f"attribute_exists(pk) AND #loads[{spoke_index}].#number = :number",
-            ExpressionAttributeNames={"#loads": "loads", "#assignedHubTrip": "assignedHubTrip", "#updatedBy": "updatedBy", "#number": "number"},
-            ExpressionAttributeValues={":hub": hub_number, ":updatedBy": updated_by, ":number": spoke_number},
+            ExpressionAttributeNames={"#loads": "loads", "#assignedHubTrip": "assignedHubTrip", "#updatedBy": "updatedBy", "#number": "number", "#itemUpdatedAt": "updatedAt"},
+            ExpressionAttributeValues={":hub": hub_number, ":updatedBy": updated_by, ":number": spoke_number, ":itemUpdatedAt": utc_now()},
             ReturnValues="ALL_NEW",
         )["Attributes"]
         current = updated["loads"][spoke_index]
